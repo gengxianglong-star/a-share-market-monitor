@@ -1,0 +1,21 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 虚拟环境
+venv/
+env/
+.env
+
+# 开发工具配置
+.vscode/
+.idea/
+
+# 注意：我们【不忽略】 data/ 目录，因为我们需要将这三个核心文件推送到 GitHub
+# 但如果后续有其他临时拉取的全市场 dump 文件，可以在这里忽略
+*temp*.csv
+*dump*.parquet
+
+# 本地拉取断点缓存（不上传 GitHub）
+data/.fetch_cache/

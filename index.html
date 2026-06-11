@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A股大盘监控看板</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    .subtitle { color: var(--muted); font-size: 0.875rem; margin-bottom: 2rem; }
+    .card {
+      background: var(--card);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .card h2 { font-size: 1rem; margin-bottom: 0.75rem; color: var(--accent); }
+    pre {
+      background: #0a0e14;
+      padding: 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 0.8125rem;
+      color: var(--muted);
+    }
+    .error { color: #f87171; }
+  </style>
+</head>
+<body>
+  <h1>A股大盘监控看板</h1>
+  <p class="subtitle">数据来源：data/daily_watchlist.json</p>
+
+  <div class="card">
+    <h2>每日自选名单</h2>
+    <pre id="watchlist">加载中…</pre>
+  </div>
+
+  <script>
+    fetch("data/daily_watchlist.json")
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data) => {
+        document.getElementById("watchlist").textContent = JSON.stringify(data, null, 2);
+      })
+      .catch((err) => {
+        document.getElementById("watchlist").innerHTML =
+          `<span class="error">无法加载数据：${err.message}</span>`;
+      });
+  </script>
+</body>
+</html>
