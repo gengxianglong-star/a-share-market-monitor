@@ -15,6 +15,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
 
+class ReuseTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
+
 def main() -> None:
     url = f"http://127.0.0.1:{PORT}/index.html"
     print("=" * 56)
@@ -26,8 +30,13 @@ def main() -> None:
         webbrowser.open(url)
     except Exception:
         pass
-    with socketserver.TCPServer(("127.0.0.1", PORT), Handler) as httpd:
-        httpd.serve_forever()
+    try:
+        with ReuseTCPServer(("127.0.0.1", PORT), Handler) as httpd:
+            httpd.serve_forever()
+    except OSError as exc:
+        print(f"启动失败（端口 {PORT} 可能被占用）: {exc}")
+        print(f"请关闭占用进程后重试，或直接访问 {url}")
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

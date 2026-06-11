@@ -115,8 +115,11 @@
     .macro-chart-item h3 {
       font-size: 0.78rem;
       color: var(--muted);
-      margin-bottom: 0.45rem;
+      margin-bottom: 0.35rem;
       font-weight: 600;
+    }
+    .macro-chart-item .threshold-legend {
+      margin-bottom: 0.45rem;
     }
     .macro-chart-item canvas { max-height: 260px; width: 100%; }
     .watchlist-grid {
@@ -240,23 +243,27 @@
   <div class="card">
     <div class="card-head">
       <h2>宏观情绪趋势</h2>
-      <p class="pipeline-hint" style="margin:0">与上方大盘水温共用时间范围 · 前约 60 个交易日部分指标逐步就绪</p>
+      <p class="pipeline-hint" style="margin:0">与上方大盘水温共用时间范围 · 虚线基于全历史 P15 / P85 分位</p>
     </div>
     <div class="macro-chart-grid">
       <div class="macro-chart-item">
         <h3>涨停 / 跌停 / 比值</h3>
+        <div class="threshold-legend" id="macroLimitLegend"></div>
         <canvas id="macroLimitChart"></canvas>
       </div>
       <div class="macro-chart-item">
         <h3>60日新高 / 新低</h3>
+        <div class="threshold-legend" id="macroHighLowLegend"></div>
         <canvas id="macroHighLowChart"></canvas>
       </div>
       <div class="macro-chart-item">
         <h3>Up/Down 25% Month（近 20 日）</h3>
+        <div class="threshold-legend" id="macroMonthLegend"></div>
         <canvas id="macroMonthChart"></canvas>
       </div>
       <div class="macro-chart-item">
         <h3>Up/Down 25% Qtr（近 60 日）</h3>
+        <div class="threshold-legend" id="macroQtrLegend"></div>
         <canvas id="macroQtrChart"></canvas>
       </div>
     </div>
@@ -280,6 +287,7 @@
     const macroCharts = {};
     let allBreadthRows = [];
     let breadthThresholds = null;
+    let macroThresholds = null;
     let currentRangeDays = 120;
 
     function toDisplayCode(code) {
@@ -350,8 +358,10 @@
         pt20High: percentile(pt20, 85),
         pt50Low: percentile(pt50, 15),
         pt50High: percentile(pt50, 85),
-        aboveHot: percentile(above, 90),
-        belowPanic: percentile(below, 90),
+        aboveLow: percentile(above, 15),
+        aboveHigh: percentile(above, 85),
+        belowLow: percentile(below, 15),
+        belowHigh: percentile(below, 85),
       };
     }
 
@@ -362,19 +372,208 @@
         { color: "#3b82f6", text: `PT20 偏高 P85 ${pct(th.pt20High)}` },
         { color: "#a855f7", text: `PT50 偏低 P15 ${pct(th.pt50Low)}` },
         { color: "#a855f7", text: `PT50 偏高 P85 ${pct(th.pt50High)}` },
-        { color: "#22c55e", text: `涨>5% 过热 P90 ${Math.round(th.aboveHot)}家` },
-        { color: "#ef4444", text: `跌>5% 恐慌 P90 ${Math.round(th.belowPanic)}家` },
+        { color: "#22c55e", text: `涨>5% P15 ${Math.round(th.aboveLow)}家 · P85 ${Math.round(th.aboveHigh)}家` },
+        { color: "#ef4444", text: `跌>5% P15 ${Math.round(th.belowLow)}家 · P85 ${Math.round(th.belowHigh)}家` },
       ];
       return items
         .map((item) => `<span style="color:${item.color}"><i style="border-color:${item.color}"></i>${item.text}</span>`)
         .join("");
     }
 
+    function colValues(rows, key) {
+      return rows.map((r) => r[key]).filter((v) => v != null && !Number.isNaN(Number(v)));
+    }
+
+    function computeMacroThresholds(rows) {
+      const band = (key) => ({
+        low: percentile(colValues(rows, key), 15),
+        high: percentile(colValues(rows, key), 85),
+      });
+      return {
+        limitUp: band("limit_up_count"),
+        limitDown: band("limit_down_count"),
+        limitRatio: band("limit_up_down_ratio"),
+        newHigh: band("new_high_60d"),
+        newLow: band("new_low_60d"),
+        upMonth: band("up_25pct_month"),
+        downMonth: band("down_25pct_month"),
+        upQtr: band("up_25pct_qtr"),
+        downQtr: band("down_25pct_qtr"),
+      };
+    }
+
+    function fmtCount(v) {
+      return v == null || isNaN(v) ? "—" : Math.round(v).toLocaleString("zh-CN");
+    }
+
+    function fmtRatio(v) {
+      return v == null || isNaN(v) ? "—" : Number(v).toFixed(2);
+    }
+
+    function legendItems(items) {
+      return items
+        .filter((item) => item.text)
+        .map((item) => `<span style="color:${item.color}"><i style="border-color:${item.color}"></i>${item.text}</span>`)
+        .join("");
+    }
+
+    function buildMacroLegendHtml(th) {
+      if (!th) return "";
+      return {
+        macroLimitLegend: legendItems([
+          { color: "#22c55e", text: `涨停 P15 ${fmtCount(th.limitUp.low)} · P85 ${fmtCount(th.limitUp.high)}` },
+          { color: "#ef4444", text: `跌停 P15 ${fmtCount(th.limitDown.low)} · P85 ${fmtCount(th.limitDown.high)}` },
+          { color: "#22d3ee", text: `比值 P15 ${fmtRatio(th.limitRatio.low)} · P85 ${fmtRatio(th.limitRatio.high)}` },
+        ]),
+        macroHighLowLegend: legendItems([
+          { color: "#22c55e", text: `新高 P15 ${fmtCount(th.newHigh.low)} · P85 ${fmtCount(th.newHigh.high)}` },
+          { color: "#ef4444", text: `新低 P15 ${fmtCount(th.newLow.low)} · P85 ${fmtCount(th.newLow.high)}` },
+        ]),
+        macroMonthLegend: legendItems([
+          { color: "#22c55e", text: `涨>25% P15 ${fmtCount(th.upMonth.low)} · P85 ${fmtCount(th.upMonth.high)}` },
+          { color: "#ef4444", text: `跌>25% P15 ${fmtCount(th.downMonth.low)} · P85 ${fmtCount(th.downMonth.high)}` },
+        ]),
+        macroQtrLegend: legendItems([
+          { color: "#22c55e", text: `涨>25% P15 ${fmtCount(th.upQtr.low)} · P85 ${fmtCount(th.upQtr.high)}` },
+          { color: "#ef4444", text: `跌>25% P15 ${fmtCount(th.downQtr.low)} · P85 ${fmtCount(th.downQtr.high)}` },
+        ]),
+      };
+    }
+
+    const MACRO_ANNOTATION_MAP = {
+      macroLimitChart: {
+        "涨停": ["limitUpLow", "limitUpHigh"],
+        "跌停": ["limitDownLow", "limitDownHigh"],
+        "涨停/跌停比": ["limitRatioLow", "limitRatioHigh"],
+      },
+      macroHighLowChart: {
+        "60日新高": ["newHighLow", "newHighHigh"],
+        "60日新低": ["newLowLow", "newLowHigh"],
+      },
+      macroMonthChart: {
+        "涨>25%": ["upMonthLow", "upMonthHigh"],
+        "跌>25%": ["downMonthLow", "downMonthHigh"],
+      },
+      macroQtrChart: {
+        "涨>25%": ["upQtrLow", "upQtrHigh"],
+        "跌>25%": ["downQtrLow", "downQtrHigh"],
+      },
+    };
+
+    function setMacroAnnotationVisibility(chart, datasetLabel, visible) {
+      const canvasId = chart.canvas?.id;
+      const keys = MACRO_ANNOTATION_MAP[canvasId]?.[datasetLabel] || [];
+      const annotations = chart.options.plugins?.annotation?.annotations;
+      if (!annotations) return;
+      keys.forEach((key) => {
+        if (annotations[key]) {
+          annotations[key].display = visible;
+        }
+      });
+    }
+
+    function handleMacroLegendClick(event, legendItem, legend) {
+      const chart = legend.chart;
+      const index = legendItem.datasetIndex;
+      const label = chart.data.datasets[index].label;
+      const visible = !chart.isDatasetVisible(index);
+      chart.setDatasetVisibility(index, visible);
+      setMacroAnnotationVisibility(chart, label, visible);
+      chart.update();
+    }
+
+    function makeThresholdLine(id, yScaleID, value, color, label, showLabel = false) {
+      if (value == null || Number.isNaN(Number(value))) return null;
+      return {
+        type: "line",
+        yMin: value,
+        yMax: value,
+        yScaleID,
+        borderColor: color,
+        borderDash: [6, 4],
+        borderWidth: 1,
+        label: {
+          display: showLabel,
+          backgroundColor: "rgba(11,15,20,0.75)",
+          color: "#8fa3bf",
+          font: { size: 10 },
+          padding: 2,
+          content: label,
+          position: "start",
+        },
+      };
+    }
+
+    function addCountBandLines(target, prefix, band, color, yScaleID, labelPrefix) {
+      const entries = [
+        ["Low", band.low, `P15 ${fmtCount(band.low)}`],
+        ["High", band.high, `P85 ${fmtCount(band.high)}`],
+      ];
+      entries.forEach(([suffix, value, text]) => {
+        const line = makeThresholdLine(`${prefix}${suffix}`, yScaleID, value, color, `${labelPrefix}${text}`);
+        if (line) target[`${prefix}${suffix}`] = line;
+      });
+    }
+
+    function addRatioBandLines(target, prefix, band, color, yScaleID, labelPrefix) {
+      [
+        ["Low", band.low, `P15 ${fmtRatio(band.low)}`],
+        ["High", band.high, `P85 ${fmtRatio(band.high)}`],
+      ].forEach(([suffix, value, text]) => {
+        const line = makeThresholdLine(`${prefix}${suffix}`, yScaleID, value, color, `${labelPrefix}${text}`);
+        if (line) target[`${prefix}${suffix}`] = line;
+      });
+    }
+
+    function buildMacroAnnotations(th) {
+      if (!th || !window["chartjs-plugin-annotation"]) {
+        return {
+          macroLimitChart: {},
+          macroHighLowChart: {},
+          macroMonthChart: {},
+          macroQtrChart: {},
+        };
+      }
+
+      const limit = {};
+      addCountBandLines(limit, "limitUp", th.limitUp, "rgba(34,197,94,0.55)", "y", "涨停");
+      addCountBandLines(limit, "limitDown", th.limitDown, "rgba(239,68,68,0.55)", "y", "跌停");
+      addRatioBandLines(limit, "limitRatio", th.limitRatio, "rgba(34,211,238,0.55)", "y1", "比值");
+
+      const highLow = {};
+      addCountBandLines(highLow, "newHigh", th.newHigh, "rgba(34,197,94,0.55)", "y", "新高");
+      addCountBandLines(highLow, "newLow", th.newLow, "rgba(239,68,68,0.55)", "y", "新低");
+
+      const month = {};
+      addCountBandLines(month, "upMonth", th.upMonth, "rgba(34,197,94,0.55)", "y", "涨>25% ");
+      addCountBandLines(month, "downMonth", th.downMonth, "rgba(239,68,68,0.55)", "y", "跌>25% ");
+
+      const qtr = {};
+      addCountBandLines(qtr, "upQtr", th.upQtr, "rgba(34,197,94,0.55)", "y", "涨>25% ");
+      addCountBandLines(qtr, "downQtr", th.downQtr, "rgba(239,68,68,0.55)", "y", "跌>25% ");
+
+      return {
+        macroLimitChart: limit,
+        macroHighLowChart: highLow,
+        macroMonthChart: month,
+        macroQtrChart: qtr,
+      };
+    }
+
+    function updateMacroLegends(th) {
+      const html = buildMacroLegendHtml(th);
+      if (!html || typeof html !== "object") return;
+      Object.entries(html).forEach(([id, content]) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = content;
+      });
+    }
+
     const ANNOTATION_MAP = {
       PT20: ["pt20Low", "pt20High"],
       PT50: ["pt50Low", "pt50High"],
-      "涨>5%家数": ["aboveHot"],
-      "跌>5%家数": ["belowPanic"],
+      "涨>5%家数": ["aboveLow", "aboveHigh"],
+      "跌>5%家数": ["belowLow", "belowHigh"],
     };
 
     function setAnnotationVisibility(chart, datasetLabel, visible) {
@@ -422,8 +621,10 @@
         pt20High: line("pt20High", "y", th.pt20High * 100, "rgba(59,130,246,0.55)", `PT20偏高 ${pct(th.pt20High)}`),
         pt50Low: line("pt50Low", "y", th.pt50Low * 100, "rgba(168,85,247,0.55)", `PT50偏低 ${pct(th.pt50Low)}`),
         pt50High: line("pt50High", "y", th.pt50High * 100, "rgba(168,85,247,0.55)", `PT50偏高 ${pct(th.pt50High)}`),
-        aboveHot: line("aboveHot", "y1", th.aboveHot, "rgba(34,197,94,0.55)", `涨>5%过热 ${Math.round(th.aboveHot)}`),
-        belowPanic: line("belowPanic", "y1", th.belowPanic, "rgba(239,68,68,0.55)", `跌>5%恐慌 ${Math.round(th.belowPanic)}`),
+        aboveLow: line("aboveLow", "y1", th.aboveLow, "rgba(34,197,94,0.55)", `涨>5% P15 ${Math.round(th.aboveLow)}`),
+        aboveHigh: line("aboveHigh", "y1", th.aboveHigh, "rgba(34,197,94,0.55)", `涨>5% P85 ${Math.round(th.aboveHigh)}`),
+        belowLow: line("belowLow", "y1", th.belowLow, "rgba(239,68,68,0.55)", `跌>5% P15 ${Math.round(th.belowLow)}`),
+        belowHigh: line("belowHigh", "y1", th.belowHigh, "rgba(239,68,68,0.55)", `跌>5% P85 ${Math.round(th.belowHigh)}`),
       };
     }
 
@@ -482,6 +683,7 @@
     function upsertMacroChart(canvasId, datasets, extraOptions = {}) {
       const labels = datasets.labels;
       const chartData = datasets.datasets;
+      const annotations = extraOptions.annotations || {};
       const options = {
         ...MACRO_CHART_BASE,
         ...extraOptions,
@@ -492,13 +694,26 @@
         plugins: {
           ...MACRO_CHART_BASE.plugins,
           ...(extraOptions.plugins || {}),
+          legend: {
+            ...MACRO_CHART_BASE.plugins.legend,
+            ...(extraOptions.plugins?.legend || {}),
+            onClick: handleMacroLegendClick,
+          },
+          annotation: { annotations },
         },
       };
 
       if (macroCharts[canvasId]) {
-        macroCharts[canvasId].data.labels = labels;
-        macroCharts[canvasId].data.datasets = chartData;
-        macroCharts[canvasId].update();
+        const chart = macroCharts[canvasId];
+        const visibility = chart.data.datasets.map((_, i) => chart.isDatasetVisible(i));
+        chart.data.labels = labels;
+        chart.data.datasets = chartData;
+        chart.options.plugins.annotation.annotations = annotations;
+        chartData.forEach((ds, i) => {
+          chart.setDatasetVisibility(i, visibility[i]);
+          setMacroAnnotationVisibility(chart, ds.label, visibility[i]);
+        });
+        chart.update();
         return;
       }
 
@@ -512,6 +727,7 @@
     function renderMacroCharts(rows) {
       const labels = rows.map((r) => r.date.slice(5));
       const useBars = rows.length <= 320;
+      const macroAnnotations = buildMacroAnnotations(macroThresholds);
 
       upsertMacroChart("macroLimitChart", {
         labels,
@@ -525,6 +741,7 @@
           lineDataset("涨停/跌停比", rows.map((r) => r.limit_up_down_ratio), "#22d3ee", "y1"),
         ],
       }, {
+        annotations: macroAnnotations.macroLimitChart,
         scales: {
           y: { position: "left", title: { display: true, text: "家数", color: "#8fa3bf", font: { size: 11 } } },
           y1: {
@@ -542,7 +759,7 @@
           lineDataset("60日新高", rows.map((r) => r.new_high_60d), "#22c55e"),
           lineDataset("60日新低", rows.map((r) => r.new_low_60d), "#ef4444"),
         ],
-      });
+      }, { annotations: macroAnnotations.macroHighLowChart });
 
       upsertMacroChart("macroMonthChart", {
         labels,
@@ -550,7 +767,7 @@
           lineDataset("涨>25%", rows.map((r) => r.up_25pct_month), "#22c55e"),
           lineDataset("跌>25%", rows.map((r) => r.down_25pct_month), "#ef4444"),
         ],
-      });
+      }, { annotations: macroAnnotations.macroMonthChart });
 
       upsertMacroChart("macroQtrChart", {
         labels,
@@ -558,7 +775,7 @@
           lineDataset("涨>25%", rows.map((r) => r.up_25pct_qtr), "#22c55e"),
           lineDataset("跌>25%", rows.map((r) => r.down_25pct_qtr), "#ef4444"),
         ],
-      });
+      }, { annotations: macroAnnotations.macroQtrChart });
     }
 
     function renderBreadthChart(rows) {
@@ -705,8 +922,34 @@
         return;
       }
 
+      const scrollRoot = document.querySelector(".watchlist-scroll");
+      if (!window.IntersectionObserver || !scrollRoot) {
+        items.slice(0, 8).forEach((item, idx) => renderOneKlineChart(item, idx));
+        return;
+      }
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            const host = entry.target;
+            const idx = Number(host.dataset.idx);
+            observer.unobserve(host);
+            renderOneKlineChart(items[idx], idx);
+          });
+        },
+        { root: scrollRoot, rootMargin: "240px 0px" }
+      );
+
       items.forEach((item, idx) => {
-        setTimeout(() => renderOneKlineChart(item, idx), idx * 40);
+        const host = document.getElementById(`kline-host-${idx}`);
+        if (!host) return;
+        host.dataset.idx = String(idx);
+        if (idx < 6) {
+          renderOneKlineChart(item, idx);
+        } else {
+          observer.observe(host);
+        }
       });
     }
 
@@ -806,7 +1049,7 @@
       allBreadthRows = parseBreadthCsv(breadthText);
 
       breadthThresholds = computeBreadthThresholds(allBreadthRows);
-      document.getElementById("thresholdLegend").innerHTML = buildThresholdLegend(breadthThresholds);
+      macroThresholds = computeMacroThresholds(allBreadthRows);
 
       const latest = allBreadthRows[allBreadthRows.length - 1] || {};
       const klineDays = watch.kline_days || 60;
@@ -821,6 +1064,9 @@
         <div class="metric"><div class="label">PT50</div><div class="value">${pct(latest.pt50)}</div><div class="hint">收在50日线上方占比</div></div>
         <div class="metric"><div class="label">Watchlist</div><div class="value">${(watch.intersection || []).length}</div></div>
       `;
+
+      document.getElementById("thresholdLegend").innerHTML = buildThresholdLegend(breadthThresholds);
+      updateMacroLegends(macroThresholds);
 
       document.querySelectorAll("#rangeBtns button").forEach((btn) => {
         btn.addEventListener("click", () => updateBreadthRange(btn.dataset.days));
@@ -888,9 +1134,10 @@
       const box = document.createElement("div");
       box.className = "error";
       box.style.margin = "1rem 0";
-      box.innerHTML = `<strong>看板加载失败：</strong>${escHtml(err.message)}<br><br>
-        请先运行：<code>python serve_dashboard.py</code><br>
-        再打开：<code>http://127.0.0.1:8765/index.html</code>`;
+      const hint = location.protocol === "file:"
+        ? "不要双击 index.html。请先在项目目录运行：<code>python serve_dashboard.py</code>，再打开 <code>http://127.0.0.1:8765/index.html</code>"
+        : "请确认已运行 <code>python serve_dashboard.py</code>，并访问 <code>http://127.0.0.1:8765/index.html</code>";
+      box.innerHTML = `<strong>看板加载失败：</strong>${escHtml(err.message)}<br><br>${hint}`;
       const header = document.querySelector("header");
       if (header) header.after(box);
     });
