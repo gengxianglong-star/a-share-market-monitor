@@ -3,67 +3,897 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>A股大盘监控看板</title>
+  <title>A股 Market Monitor 复盘看板</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     :root {
-      --bg: #0f1419;
-      --card: #1a2332;
-      --text: #e7ecf3;
-      --muted: #8b9cb3;
+      --bg: #0b0f14;
+      --card: #151c27;
+      --border: #243044;
+      --text: #e8eef7;
+      --muted: #8fa3bf;
       --accent: #3b82f6;
+      --green: #22c55e;
+      --red: #ef4444;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: "Segoe UI", system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
-      line-height: 1.6;
-      padding: 2rem;
-      max-width: 960px;
+      line-height: 1.5;
+      padding: 1rem;
+      max-width: 1200px;
       margin: 0 auto;
     }
-    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
-    .subtitle { color: var(--muted); font-size: 0.875rem; margin-bottom: 2rem; }
-    .card {
-      background: var(--card);
-      border-radius: 8px;
-      padding: 1.25rem;
+    header { margin-bottom: 1.5rem; }
+    h1 { font-size: 1.4rem; font-weight: 700; }
+    .subtitle { color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.75rem;
       margin-bottom: 1rem;
     }
-    .card h2 { font-size: 1rem; margin-bottom: 0.75rem; color: var(--accent); }
-    pre {
-      background: #0a0e14;
+    .metric {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.9rem;
+    }
+    .metric .label { font-size: 0.75rem; color: var(--muted); }
+    .metric .value { font-size: 1.35rem; font-weight: 700; margin-top: 0.2rem; }
+    .metric .value.value-sm { font-size: 1.05rem; }
+    .metric .hint { font-size: 0.65rem; color: var(--muted); margin-top: 0.15rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
       padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .card h2 {
+      font-size: 0.95rem;
+      color: var(--accent);
+      margin-bottom: 0;
+    }
+    .card-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .range-btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .range-btns button {
+      background: #1e293b;
+      border: 1px solid var(--border);
+      color: var(--muted);
       border-radius: 6px;
-      overflow-x: auto;
-      font-size: 0.8125rem;
+      padding: 0.25rem 0.55rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .range-btns button:hover { color: var(--text); border-color: var(--accent); }
+    .range-btns button.active {
+      background: #1e3a5f;
+      color: var(--text);
+      border-color: var(--accent);
+    }
+    .threshold-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.75rem;
+      margin-bottom: 0.75rem;
+      font-size: 0.72rem;
       color: var(--muted);
     }
-    .error { color: #f87171; }
+    .threshold-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .threshold-legend i {
+      display: inline-block;
+      width: 18px;
+      height: 0;
+      border-top: 2px dashed currentColor;
+    }
+    #breadthChart { max-height: 320px; }
+    .macro-chart-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .macro-chart-item h3 {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 0.45rem;
+      font-weight: 600;
+    }
+    .macro-chart-item canvas { max-height: 260px; width: 100%; }
+    .watchlist-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+    }
+    .kline-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #0a0e14;
+    }
+    .kline-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.55rem 0.7rem;
+      background: #101820;
+      border-bottom: 1px solid var(--border);
+    }
+    .kline-head-left {
+      flex: 1;
+      min-width: 0;
+    }
+    .kline-title-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .kline-ticker {
+      color: #22d3ee;
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+      flex-shrink: 0;
+    }
+    .kline-name { font-size: 0.84rem; color: var(--text); flex-shrink: 0; }
+    .kline-industry {
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-weight: 400;
+      margin-left: 0.35rem;
+    }
+    .kline-rs { font-size: 0.84rem; color: var(--muted); flex-shrink: 0; }
+    .kline-rs strong { color: var(--green); font-weight: 600; }
+    .watchlist-scroll {
+      max-height: 72vh;
+      overflow-y: auto;
+      padding-right: 0.25rem;
+    }
+    .watchlist-scroll::-webkit-scrollbar { width: 8px; }
+    .watchlist-scroll::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    .kline-chart-frame { height: 260px; background: #000; }
+    .kline-chart-host { width: 100%; height: 100%; }
+    .kline-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--muted);
+      font-size: 0.82rem;
+      padding: 1rem;
+      text-align: center;
+    }
+    .sector-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      margin-top: 0.35rem;
+    }
+    .sector-table th, .sector-table td {
+      padding: 0.45rem 0.5rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .sector-table th { color: var(--muted); font-weight: 600; }
+    .sector-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .sector-table .rank { color: #22d3ee; font-weight: 700; width: 2.5rem; }
+    .pipeline-hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.35rem;
+      line-height: 1.45;
+    }
+    .error { color: var(--red); padding: 1rem; }
+    .muted { color: var(--muted); font-size: 0.85rem; }
+    @media (max-width: 640px) {
+      .watchlist-grid { grid-template-columns: 1fr; }
+      .kline-chart-frame { height: 220px; }
+    }
   </style>
 </head>
 <body>
-  <h1>A股大盘监控看板</h1>
-  <p class="subtitle">数据来源：data/daily_watchlist.json</p>
+  <header>
+    <h1>A股 Market Monitor</h1>
+    <p class="subtitle" id="meta">加载中…</p>
+  </header>
+
+  <div class="grid" id="metrics"></div>
 
   <div class="card">
-    <h2>每日自选名单</h2>
-    <pre id="watchlist">加载中…</pre>
+    <div class="card-head">
+      <h2>大盘水温</h2>
+      <div class="range-btns" id="rangeBtns">
+        <button type="button" data-days="60">60日</button>
+        <button type="button" data-days="120" class="active">120日</button>
+        <button type="button" data-days="250">250日</button>
+        <button type="button" data-days="252">1年</button>
+        <button type="button" data-days="all">全部</button>
+      </div>
+    </div>
+    <div class="threshold-legend" id="thresholdLegend"></div>
+    <canvas id="breadthChart"></canvas>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>宏观情绪趋势</h2>
+      <p class="pipeline-hint" style="margin:0">与上方大盘水温共用时间范围 · 前约 60 个交易日部分指标逐步就绪</p>
+    </div>
+    <div class="macro-chart-grid">
+      <div class="macro-chart-item">
+        <h3>涨停 / 跌停 / 比值</h3>
+        <canvas id="macroLimitChart"></canvas>
+      </div>
+      <div class="macro-chart-item">
+        <h3>60日新高 / 新低</h3>
+        <canvas id="macroHighLowChart"></canvas>
+      </div>
+      <div class="macro-chart-item">
+        <h3>Up/Down 25% Month（近 20 日）</h3>
+        <canvas id="macroMonthChart"></canvas>
+      </div>
+      <div class="macro-chart-item">
+        <h3>Up/Down 25% Qtr（近 60 日）</h3>
+        <canvas id="macroQtrChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>申万二级 RS 排名 Top 10</h2>
+    <p class="pipeline-hint">行业 RS = 行业内全部成分股 RS 中位数 → 从高到低取前 10 个有入选股的行业（入选为 0 则递补）→ 在行业内筛符合趋势/流动性标准的股票 → 再与全市场 RS Top 10% 交叉</p>
+    <div id="sectors"></div>
+  </div>
+
+  <div class="card">
+    <h2>终极 Watchlist（申万二级 ∩ RS Top 10% · 近 60 日 K 线）</h2>
+    <div class="watchlist-scroll">
+      <div id="watchlist" class="watchlist-grid"></div>
+    </div>
   </div>
 
   <script>
-    fetch("data/daily_watchlist.json")
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((data) => {
-        document.getElementById("watchlist").textContent = JSON.stringify(data, null, 2);
-      })
-      .catch((err) => {
-        document.getElementById("watchlist").innerHTML =
-          `<span class="error">无法加载数据：${err.message}</span>`;
+    let breadthChart = null;
+    const macroCharts = {};
+    let allBreadthRows = [];
+    let breadthThresholds = null;
+    let currentRangeDays = 120;
+
+    function toDisplayCode(code) {
+      return String(code).replace(/^(sh|sz)\./i, "");
+    }
+
+    function pct(v) {
+      if (v == null || isNaN(v)) return "—";
+      return (Number(v) * 100).toFixed(1) + "%";
+    }
+
+    function num(v) {
+      if (v == null || isNaN(v)) return "—";
+      return Math.round(Number(v)).toLocaleString("zh-CN");
+    }
+
+    function parseBreadthCsv(text) {
+      const lines = text.trim().split("\n");
+      if (lines.length < 2) return [];
+      const headers = lines[0].split(",").map((h) => h.trim());
+      return lines.slice(1).map((line) => {
+        const cols = line.split(",");
+        const row = {};
+        headers.forEach((key, i) => {
+          const raw = cols[i] ?? "";
+          if (key === "date") {
+            row.date = raw;
+          } else {
+            row[key] = raw !== "" ? Number(raw) : null;
+          }
+        });
+        row.above = row.above_5pct_count;
+        row.below = row.below_5pct_count;
+        row.pt20 = row.pt20_ratio;
+        row.pt50 = row.pt50_ratio;
+        return row;
+      }).filter((row) => row.pt20 != null || row.above != null);
+    }
+
+    function escHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function percentile(values, p) {
+      const sorted = values
+        .filter((v) => v != null && !Number.isNaN(Number(v)))
+        .map(Number)
+        .sort((a, b) => a - b);
+      if (!sorted.length) return null;
+      const idx = (p / 100) * (sorted.length - 1);
+      const lo = Math.floor(idx);
+      const hi = Math.ceil(idx);
+      if (lo === hi) return sorted[lo];
+      return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+    }
+
+    function computeBreadthThresholds(rows) {
+      const pt20 = rows.map((r) => r.pt20).filter((v) => v != null);
+      const pt50 = rows.map((r) => r.pt50).filter((v) => v != null);
+      const above = rows.map((r) => r.above).filter((v) => v != null);
+      const below = rows.map((r) => r.below).filter((v) => v != null);
+      return {
+        pt20Low: percentile(pt20, 15),
+        pt20High: percentile(pt20, 85),
+        pt50Low: percentile(pt50, 15),
+        pt50High: percentile(pt50, 85),
+        aboveHot: percentile(above, 90),
+        belowPanic: percentile(below, 90),
+      };
+    }
+
+    function buildThresholdLegend(th) {
+      if (!th) return "";
+      const items = [
+        { color: "#3b82f6", text: `PT20 偏低 P15 ${pct(th.pt20Low)}` },
+        { color: "#3b82f6", text: `PT20 偏高 P85 ${pct(th.pt20High)}` },
+        { color: "#a855f7", text: `PT50 偏低 P15 ${pct(th.pt50Low)}` },
+        { color: "#a855f7", text: `PT50 偏高 P85 ${pct(th.pt50High)}` },
+        { color: "#22c55e", text: `涨>5% 过热 P90 ${Math.round(th.aboveHot)}家` },
+        { color: "#ef4444", text: `跌>5% 恐慌 P90 ${Math.round(th.belowPanic)}家` },
+      ];
+      return items
+        .map((item) => `<span style="color:${item.color}"><i style="border-color:${item.color}"></i>${item.text}</span>`)
+        .join("");
+    }
+
+    const ANNOTATION_MAP = {
+      PT20: ["pt20Low", "pt20High"],
+      PT50: ["pt50Low", "pt50High"],
+      "涨>5%家数": ["aboveHot"],
+      "跌>5%家数": ["belowPanic"],
+    };
+
+    function setAnnotationVisibility(chart, datasetLabel, visible) {
+      const keys = ANNOTATION_MAP[datasetLabel] || [];
+      const annotations = chart.options.plugins.annotation.annotations;
+      keys.forEach((key) => {
+        if (annotations[key]) {
+          annotations[key].display = visible;
+        }
       });
+    }
+
+    function handleLegendClick(event, legendItem, legend) {
+      const chart = legend.chart;
+      const index = legendItem.datasetIndex;
+      const label = chart.data.datasets[index].label;
+      const visible = !chart.isDatasetVisible(index);
+      chart.setDatasetVisibility(index, visible);
+      setAnnotationVisibility(chart, label, visible);
+      chart.update();
+    }
+
+    function buildAnnotationLines(th) {
+      const labelStyle = {
+        display: true,
+        backgroundColor: "rgba(11,15,20,0.75)",
+        color: "#8fa3bf",
+        font: { size: 10 },
+        padding: 2,
+      };
+
+      const line = (id, yScaleID, value, color, label) => ({
+        type: "line",
+        yMin: value,
+        yMax: value,
+        yScaleID,
+        borderColor: color,
+        borderDash: [6, 4],
+        borderWidth: 1,
+        label: { ...labelStyle, content: label, position: "start" },
+      });
+
+      return {
+        pt20Low: line("pt20Low", "y", th.pt20Low * 100, "rgba(59,130,246,0.55)", `PT20偏低 ${pct(th.pt20Low)}`),
+        pt20High: line("pt20High", "y", th.pt20High * 100, "rgba(59,130,246,0.55)", `PT20偏高 ${pct(th.pt20High)}`),
+        pt50Low: line("pt50Low", "y", th.pt50Low * 100, "rgba(168,85,247,0.55)", `PT50偏低 ${pct(th.pt50Low)}`),
+        pt50High: line("pt50High", "y", th.pt50High * 100, "rgba(168,85,247,0.55)", `PT50偏高 ${pct(th.pt50High)}`),
+        aboveHot: line("aboveHot", "y1", th.aboveHot, "rgba(34,197,94,0.55)", `涨>5%过热 ${Math.round(th.aboveHot)}`),
+        belowPanic: line("belowPanic", "y1", th.belowPanic, "rgba(239,68,68,0.55)", `跌>5%恐慌 ${Math.round(th.belowPanic)}`),
+      };
+    }
+
+    function sliceBreadthRows(rows, days) {
+      if (days === "all") return rows;
+      return rows.slice(-Number(days));
+    }
+
+    const MACRO_CHART_BASE = {
+      responsive: true,
+      maintainAspectRatio: true,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: {
+          ticks: { color: "#8fa3bf", maxTicksLimit: 10 },
+          grid: { color: "rgba(36,48,68,0.5)" },
+        },
+        y: {
+          ticks: { color: "#8fa3bf" },
+          grid: { color: "rgba(36,48,68,0.35)" },
+        },
+      },
+      plugins: {
+        legend: {
+          labels: { color: "#8fa3bf", boxWidth: 12, font: { size: 11 } },
+        },
+      },
+    };
+
+    function lineDataset(label, data, color, yAxisID = "y") {
+      return {
+        type: "line",
+        label,
+        data,
+        borderColor: color,
+        backgroundColor: "transparent",
+        tension: 0.15,
+        pointRadius: 0,
+        borderWidth: 2,
+        yAxisID,
+      };
+    }
+
+    function barDataset(label, data, color, yAxisID = "y") {
+      return {
+        type: "bar",
+        label,
+        data,
+        backgroundColor: color,
+        borderColor: color,
+        borderWidth: 1,
+        yAxisID,
+      };
+    }
+
+    function upsertMacroChart(canvasId, datasets, extraOptions = {}) {
+      const labels = datasets.labels;
+      const chartData = datasets.datasets;
+      const options = {
+        ...MACRO_CHART_BASE,
+        ...extraOptions,
+        scales: {
+          ...MACRO_CHART_BASE.scales,
+          ...(extraOptions.scales || {}),
+        },
+        plugins: {
+          ...MACRO_CHART_BASE.plugins,
+          ...(extraOptions.plugins || {}),
+        },
+      };
+
+      if (macroCharts[canvasId]) {
+        macroCharts[canvasId].data.labels = labels;
+        macroCharts[canvasId].data.datasets = chartData;
+        macroCharts[canvasId].update();
+        return;
+      }
+
+      macroCharts[canvasId] = new Chart(document.getElementById(canvasId), {
+        type: "line",
+        data: { labels, datasets: chartData },
+        options,
+      });
+    }
+
+    function renderMacroCharts(rows) {
+      const labels = rows.map((r) => r.date.slice(5));
+      const useBars = rows.length <= 320;
+
+      upsertMacroChart("macroLimitChart", {
+        labels,
+        datasets: [
+          useBars
+            ? barDataset("涨停", rows.map((r) => r.limit_up_count), "rgba(34,197,94,0.7)")
+            : lineDataset("涨停", rows.map((r) => r.limit_up_count), "rgba(34,197,94,0.9)"),
+          useBars
+            ? barDataset("跌停", rows.map((r) => r.limit_down_count), "rgba(239,68,68,0.7)")
+            : lineDataset("跌停", rows.map((r) => r.limit_down_count), "rgba(239,68,68,0.9)"),
+          lineDataset("涨停/跌停比", rows.map((r) => r.limit_up_down_ratio), "#22d3ee", "y1"),
+        ],
+      }, {
+        scales: {
+          y: { position: "left", title: { display: true, text: "家数", color: "#8fa3bf", font: { size: 11 } } },
+          y1: {
+            position: "right",
+            grid: { drawOnChartArea: false },
+            ticks: { color: "#8fa3bf" },
+            title: { display: true, text: "比值", color: "#8fa3bf", font: { size: 11 } },
+          },
+        },
+      });
+
+      upsertMacroChart("macroHighLowChart", {
+        labels,
+        datasets: [
+          lineDataset("60日新高", rows.map((r) => r.new_high_60d), "#22c55e"),
+          lineDataset("60日新低", rows.map((r) => r.new_low_60d), "#ef4444"),
+        ],
+      });
+
+      upsertMacroChart("macroMonthChart", {
+        labels,
+        datasets: [
+          lineDataset("涨>25%", rows.map((r) => r.up_25pct_month), "#22c55e"),
+          lineDataset("跌>25%", rows.map((r) => r.down_25pct_month), "#ef4444"),
+        ],
+      });
+
+      upsertMacroChart("macroQtrChart", {
+        labels,
+        datasets: [
+          lineDataset("涨>25%", rows.map((r) => r.up_25pct_qtr), "#22c55e"),
+          lineDataset("跌>25%", rows.map((r) => r.down_25pct_qtr), "#ef4444"),
+        ],
+      });
+    }
+
+    function renderBreadthChart(rows) {
+      const labels = rows.map((r) => r.date.slice(5));
+      const useBars = rows.length <= 320;
+      const countChartType = useBars ? "bar" : "line";
+      const datasets = [
+        {
+          type: countChartType,
+          label: "涨>5%家数",
+          data: rows.map((r) => r.above),
+          backgroundColor: useBars ? "rgba(34,197,94,0.65)" : "transparent",
+          borderColor: "rgba(34,197,94,0.9)",
+          borderWidth: useBars ? 1 : 2,
+          yAxisID: "y1",
+          order: 2,
+          pointRadius: useBars ? 0 : 0,
+          tension: 0.15,
+        },
+        {
+          type: countChartType,
+          label: "跌>5%家数",
+          data: rows.map((r) => r.below),
+          backgroundColor: useBars ? "rgba(239,68,68,0.65)" : "transparent",
+          borderColor: "rgba(239,68,68,0.9)",
+          borderWidth: useBars ? 1 : 2,
+          yAxisID: "y1",
+          order: 2,
+          pointRadius: useBars ? 0 : 0,
+          tension: 0.15,
+        },
+        {
+          type: "line",
+          label: "PT20",
+          data: rows.map((r) => (r.pt20 != null ? r.pt20 * 100 : null)),
+          borderColor: "#3b82f6",
+          backgroundColor: "transparent",
+          tension: 0.2,
+          pointRadius: 0,
+          borderWidth: 2,
+          yAxisID: "y",
+          order: 1,
+        },
+        {
+          type: "line",
+          label: "PT50",
+          data: rows.map((r) => (r.pt50 != null ? r.pt50 * 100 : null)),
+          borderColor: "#a855f7",
+          backgroundColor: "transparent",
+          tension: 0.2,
+          pointRadius: 0,
+          borderWidth: 2,
+          yAxisID: "y",
+          order: 1,
+        },
+      ];
+
+      const annotations = breadthThresholds && window["chartjs-plugin-annotation"]
+        ? buildAnnotationLines(breadthThresholds)
+        : {};
+
+      if (breadthChart) {
+        const visibility = breadthChart.data.datasets.map((_, i) => breadthChart.isDatasetVisible(i));
+        breadthChart.data.labels = labels;
+        breadthChart.data.datasets = datasets;
+        datasets.forEach((ds, i) => {
+          breadthChart.setDatasetVisibility(i, visibility[i]);
+          setAnnotationVisibility(breadthChart, ds.label, visibility[i]);
+        });
+        breadthChart.options.plugins.annotation.annotations = annotations;
+        breadthChart.update();
+        return;
+      }
+
+      breadthChart = new Chart(document.getElementById("breadthChart"), {
+        type: "bar",
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          interaction: { mode: "index", intersect: false },
+          scales: {
+            x: {
+              ticks: { color: "#8fa3bf", maxTicksLimit: 12 },
+              grid: { color: "rgba(36,48,68,0.5)" },
+            },
+            y: {
+              min: 0,
+              max: 100,
+              position: "left",
+              ticks: { color: "#8fa3bf", callback: (v) => v + "%" },
+              grid: { color: "rgba(36,48,68,0.35)" },
+              title: { display: true, text: "PT20 / PT50", color: "#8fa3bf", font: { size: 11 } },
+            },
+            y1: {
+              position: "right",
+              ticks: { color: "#8fa3bf" },
+              grid: { drawOnChartArea: false },
+              title: { display: true, text: "涨/跌>5% 家数", color: "#8fa3bf", font: { size: 11 } },
+            },
+          },
+          plugins: {
+            legend: {
+              labels: { color: "#8fa3bf", boxWidth: 12 },
+              onClick: handleLegendClick,
+            },
+            annotation: { annotations },
+          },
+        },
+      });
+    }
+
+    function updateBreadthRange(days) {
+      currentRangeDays = days;
+      document.querySelectorAll("#rangeBtns button").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.days === String(days));
+      });
+      const sliced = sliceBreadthRows(allBreadthRows, days);
+      renderBreadthChart(sliced);
+      renderMacroCharts(sliced);
+    }
+
+    function calcEmaSeries(klines, period) {
+      const closes = klines.map((k) => Number(k.close));
+      const multiplier = 2 / (period + 1);
+      const result = [];
+      let ema = null;
+
+      for (let i = 0; i < closes.length; i += 1) {
+        if (i < period - 1) continue;
+        if (ema === null) {
+          ema = closes.slice(0, period).reduce((sum, v) => sum + v, 0) / period;
+        } else {
+          ema = closes[i] * multiplier + ema * (1 - multiplier);
+        }
+        result.push({ time: klines[i].date, value: ema });
+      }
+      return result;
+    }
+
+    function renderWatchlistCharts(items) {
+      if (!window.LightweightCharts) {
+        console.warn("LightweightCharts 未加载，K 线区域跳过");
+        return;
+      }
+
+      items.forEach((item, idx) => {
+        setTimeout(() => renderOneKlineChart(item, idx), idx * 40);
+      });
+    }
+
+    function renderOneKlineChart(item, idx) {
+      const host = document.getElementById(`kline-host-${idx}`);
+      if (!host || host.dataset.rendered === "1") return;
+
+      const klines = item.klines || [];
+      if (!klines.length) {
+        host.innerHTML = '<div class="kline-empty">无 K 线数据，请重新运行 daily_job.py</div>';
+        return;
+      }
+
+      host.dataset.rendered = "1";
+
+        const chart = LightweightCharts.createChart(host, {
+          width: host.clientWidth,
+          height: host.clientHeight || 240,
+          layout: {
+            background: { type: "solid", color: "#000000" },
+            textColor: "#8fa3bf",
+          },
+          grid: {
+            vertLines: { color: "#1a2433" },
+            horzLines: { color: "#1a2433" },
+          },
+          timeScale: {
+            borderColor: "#243044",
+            fixLeftEdge: true,
+            fixRightEdge: true,
+          },
+          rightPriceScale: { borderColor: "#243044" },
+        });
+
+        const candleSeries = chart.addCandlestickSeries({
+          upColor: "#ef4444",
+          downColor: "#22c55e",
+          borderVisible: false,
+          wickUpColor: "#ef4444",
+          wickDownColor: "#22c55e",
+        });
+
+        candleSeries.setData(
+          klines.map((k) => ({
+            time: k.date,
+            open: Number(k.open),
+            high: Number(k.high),
+            low: Number(k.low),
+            close: Number(k.close),
+          }))
+        );
+
+        const emaConfigs = [
+          { period: 10, color: "#eab308" },
+          { period: 20, color: "#ec4899" },
+          { period: 50, color: "#3b82f6" },
+        ];
+
+        emaConfigs.forEach(({ period, color }) => {
+          const emaData = calcEmaSeries(klines, period);
+          if (!emaData.length) return;
+          chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+            .setData(emaData);
+        });
+
+        chart.timeScale().fitContent();
+
+        if (window.ResizeObserver) {
+          const observer = new ResizeObserver(() => {
+            chart.applyOptions({ width: host.clientWidth });
+            chart.timeScale().fitContent();
+          });
+          observer.observe(host);
+        }
+    }
+
+    async function loadData() {
+      if (location.protocol === "file:") {
+        throw new Error(
+          "请运行: python serve_dashboard.py  然后打开 http://127.0.0.1:8765/index.html"
+        );
+      }
+      if (typeof Chart === "undefined") {
+        throw new Error("Chart.js 未加载，请检查网络能否访问 cdn.jsdelivr.net");
+      }
+
+      const [breadthRes, watchRes] = await Promise.all([
+        fetch("data/market_breadth_history.csv"),
+        fetch("data/daily_watchlist.json"),
+      ]);
+      if (!breadthRes.ok) throw new Error("无法加载 market_breadth_history.csv");
+      if (!watchRes.ok) throw new Error("无法加载 daily_watchlist.json");
+
+      const breadthText = await breadthRes.text();
+      const watch = await watchRes.json();
+
+      allBreadthRows = parseBreadthCsv(breadthText);
+
+      breadthThresholds = computeBreadthThresholds(allBreadthRows);
+      document.getElementById("thresholdLegend").innerHTML = buildThresholdLegend(breadthThresholds);
+
+      const latest = allBreadthRows[allBreadthRows.length - 1] || {};
+      const klineDays = watch.kline_days || 60;
+
+      document.getElementById("meta").textContent =
+        `数据日期: ${watch.date || latest.date || "—"} · 近 ${klineDays} 日 K 线 · 宽度历史 ${allBreadthRows.length} 天`;
+
+      document.getElementById("metrics").innerHTML = `
+        <div class="metric"><div class="label">涨 &gt;5% 家数</div><div class="value">${num(latest.above)}</div></div>
+        <div class="metric"><div class="label">跌 &gt;5% 家数</div><div class="value">${num(latest.below)}</div></div>
+        <div class="metric"><div class="label">PT20</div><div class="value">${pct(latest.pt20)}</div><div class="hint">收在20日线上方占比</div></div>
+        <div class="metric"><div class="label">PT50</div><div class="value">${pct(latest.pt50)}</div><div class="hint">收在50日线上方占比</div></div>
+        <div class="metric"><div class="label">Watchlist</div><div class="value">${(watch.intersection || []).length}</div></div>
+      `;
+
+      document.querySelectorAll("#rangeBtns button").forEach((btn) => {
+        btn.addEventListener("click", () => updateBreadthRange(btn.dataset.days));
+      });
+      updateBreadthRange(currentRangeDays);
+
+      const sectors = watch.top_sectors || [];
+      document.getElementById("sectors").innerHTML = sectors.length
+        ? `<table class="sector-table">
+            <thead>
+              <tr>
+                <th>排名</th>
+                <th>申万二级</th>
+                <th class="num">行业 RS</th>
+                <th class="num">成分股</th>
+                <th class="num">符合标准</th>
+                <th class="num">入选</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sectors.map((s) => `
+                <tr>
+                  <td class="rank">#${s.rank ?? "—"}</td>
+                  <td>${escHtml(s.sector)}</td>
+                  <td class="num">${s.sector_rs ?? "—"}</td>
+                  <td class="num">${s.stock_count ?? "—"}</td>
+                  <td class="num">${s.funnel_count ?? "—"}</td>
+                  <td class="num">${s.watchlist_count ?? "—"}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>`
+        : `<span class="muted">暂无行业数据</span>`;
+
+      const list = watch.intersection || [];
+      document.getElementById("watchlist").innerHTML = list.length
+        ? list.map((item, idx) => {
+            const ticker = escHtml(toDisplayCode(item.code));
+            const name = escHtml(item.name || "—");
+            const rs = escHtml(item.rs_score ?? "—");
+            const industry = escHtml(item.sector || (item.sectors && item.sectors[0]) || "—");
+            return `
+          <div class="kline-card">
+            <div class="kline-head">
+              <div class="kline-head-left">
+                <div class="kline-title-row">
+                  <span class="kline-ticker">${ticker}</span>
+                  <span class="kline-name">${name}<span class="kline-industry">${industry !== "—" ? " · " + industry : ""}</span></span>
+                </div>
+              </div>
+              <span class="kline-rs">RS <strong>${rs}</strong></span>
+            </div>
+            <div class="kline-chart-frame">
+              <div class="kline-chart-host" id="kline-host-${idx}"></div>
+            </div>
+          </div>`;
+          }).join("")
+        : `<p class="muted">今日无交集入选</p>`;
+
+      renderWatchlistCharts(list);
+    }
+
+    loadData().catch((err) => {
+      const meta = document.getElementById("meta");
+      if (meta) meta.textContent = "看板加载失败";
+      const box = document.createElement("div");
+      box.className = "error";
+      box.style.margin = "1rem 0";
+      box.innerHTML = `<strong>看板加载失败：</strong>${escHtml(err.message)}<br><br>
+        请先运行：<code>python serve_dashboard.py</code><br>
+        再打开：<code>http://127.0.0.1:8765/index.html</code>`;
+      const header = document.querySelector("header");
+      if (header) header.after(box);
+    });
   </script>
 </body>
 </html>

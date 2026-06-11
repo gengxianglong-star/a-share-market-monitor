@@ -19,10 +19,10 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from src import config
+from src.breadth_engine import compute_full_market_breadth_history
 from src.data_fetcher import read_local_tdx_market
 from src.kline_processor import (
     add_technical_indicators,
-    compute_market_breadth,
     extract_rolling_hot_data,
 )
 from src.utils import ensure_data_dir, save_parquet
@@ -74,8 +74,8 @@ def main() -> None:
     print("[步骤 2/4] 计算技术指标...")
     enriched_df = add_technical_indicators(raw_df)
 
-    print("[步骤 3/4] 计算宏观 Market Breadth...")
-    breadth_df = compute_market_breadth(enriched_df)
+    print("[步骤 3/4] 计算宏观 Market Breadth（含情绪指标全列）...")
+    breadth_df = compute_full_market_breadth_history(enriched_df)
 
     print("[步骤 4/4] 截取微观热数据池...")
     hot_df = extract_rolling_hot_data(enriched_df)

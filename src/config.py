@@ -10,6 +10,8 @@ DATA_DIR = BASE_DIR / "data"
 MACRO_BREADTH_FILE = DATA_DIR / "market_breadth_history.csv" # 宏观广度历史冷数据
 ROLLING_KLINES_FILE = DATA_DIR / "rolling_klines.parquet"    # 微观滚动K线热数据池
 DAILY_WATCHLIST_FILE = DATA_DIR / "daily_watchlist.json"     # 每日最终输出观察名单
+SECTOR_MAPPING_FILE = DATA_DIR / "sector_mapping.parquet"    # 申万二级 / 概念 成分股映射缓存
+SECTOR_MAPPING_SOURCE = "sw"  # sw=申万二级(默认) | ths=同花顺概念 | em=东财概念
 # ==============================================================================
 # 📊 2. 微观指标：Qullamaggie 相对强度 (Relative Strength) 引擎参数
 # ==============================================================================
@@ -37,7 +39,7 @@ MIN_LISTING_DAYS = 60
 MA_SHORT_PERIOD = 20
 MA_LONG_PERIOD = 50
 MA_LONG_SLOPE_LOOKBACK = 20 # 评估 MA50 趋势斜率的回溯天数
-# 强势概念板块递补目标数量：筛选出至少10个包含符合条件股票的强势概念
+# 强势板块递补目标数量：筛选出至少10个包含符合条件股票的强势申万二级行业
 TARGET_SECTOR_COUNT = 10
 # ==============================================================================
 # 🌡️ 4. 宏观指标：Stockbee 市场宽度监控器 (Market Breadth Monitor) 参数
@@ -51,9 +53,10 @@ BREADTH_PT_LONG = 50  # PT50: 股价在 50日均线上的比例 (判断中线牛
 BREADTH_MONTH_DAYS = 20 # 交易日月度周期
 BREADTH_QTR_DAYS = 60   # 交易日季度周期
 BREADTH_MONTH_QTR_PCT = 25.0 # 统计 20天/60天内涨跌幅超过 25% 的股票家数
-# 赚钱效应延续性 Ratio 参数
-BREADTH_RATIO_SHORT_DAYS = 5  # 计算过去 5天 涨幅>5%家数 的平均占比
-BREADTH_RATIO_LONG_DAYS = 10  # 计算过去 10天 涨幅>5%家数 的平均占比
+# 涨跌停判定阈值（主板约 10%，创业板/科创板约 20%）
+BREADTH_LIMIT_UP_PCT_MAIN = 9.8
+BREADTH_LIMIT_UP_PCT_GROWTH = 19.5
+BREADTH_NEW_HIGH_LOW_DAYS = 60  # 季度新高/新低回溯窗口
 # ==============================================================================
 # 🧹 5. 数据清洗常量 (Data Cleaning Constants)
 # ==============================================================================
@@ -72,3 +75,7 @@ AKSHARE_UPDATE_WORKERS = 8
 # ROLLING_WINDOW_DAYS 已在上方定义
 # 全量历史起点（通达信盘后下载建议至少覆盖此日期）
 FULL_HISTORY_START_DATE = "2019-01-01"
+# 板块映射缓存有效期（天），过期后在 daily_job 中自动刷新
+SECTOR_CACHE_DAYS = 7
+# 看板 K 线图展示最近 N 个交易日（新浪 GIF 无法指定天数；JSON 接口 datalen 最大约 1023）
+KLINE_CHART_DAYS = 60

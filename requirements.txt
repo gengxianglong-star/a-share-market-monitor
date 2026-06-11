@@ -13,3 +13,7 @@ fastparquet>=2023.10.0
 # --- 辅助工具 ---
 tqdm>=4.66.0
 requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+html5lib>=1.1
+py-mini-racer>=0.12.0
