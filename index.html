@@ -235,71 +235,163 @@
       .watchlist-grid { grid-template-columns: 1fr; }
       .kline-chart-frame { height: 256px; }
     }
+
+    /* 宏观 / 中观 / 微观 三层复盘结构 */
+    .dashboard-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+      margin-top: 1.5rem;
+    }
+    .level-section {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      position: relative;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    .section-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px dashed var(--border);
+    }
+    .step-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+    }
+    .section-header h2 {
+      font-size: 1.3rem;
+      color: var(--text);
+      margin: 0;
+      font-weight: 700;
+    }
+    .section-desc {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 0.4rem;
+      line-height: 1.4;
+    }
+    .level-section .card {
+      border: none;
+      background: rgba(255, 255, 255, 0.02);
+      margin-bottom: 1.5rem;
+    }
+    .level-section .card:last-child {
+      margin-bottom: 0;
+    }
+    .level-section .grid {
+      margin-bottom: 1.5rem;
+    }
   </style>
 </head>
 <body>
   <header>
-    <h1>A股 Market Monitor</h1>
+    <h1>A股 Market Monitor 复盘看板</h1>
     <p class="subtitle" id="meta">加载中…</p>
   </header>
 
-  <div class="grid" id="metrics"></div>
+  <div class="dashboard-layout">
 
-  <div class="card">
-    <div class="card-head">
-      <h2>大盘水温</h2>
-      <div class="range-btns" id="rangeBtns">
-        <button type="button" data-days="60">60日</button>
-        <button type="button" data-days="120" class="active">120日</button>
-        <button type="button" data-days="250">250日</button>
-        <button type="button" data-days="252">1年</button>
-        <button type="button" data-days="all">全部</button>
+    <section class="level-section">
+      <div class="section-header">
+        <div class="step-badge">1</div>
+        <div>
+          <h2>宏观：大势与情绪位置</h2>
+          <p class="section-desc">判断大盘现在处于什么位置，什么趋势，距离极值还有多远。</p>
+        </div>
       </div>
-    </div>
-    <div class="threshold-legend" id="thresholdLegend"></div>
-    <canvas id="breadthChart"></canvas>
-  </div>
 
-  <div class="card">
-    <div class="card-head">
-      <h2>宏观情绪趋势</h2>
-      <p class="pipeline-hint" style="margin:0">与上方大盘水温共用时间范围 · 虚线基于全历史 P15 / P85 分位</p>
-    </div>
-    <div class="macro-chart-grid">
-      <div class="macro-chart-item">
-        <h3>涨停 / 跌停 / 比值</h3>
-        <div class="threshold-legend" id="macroLimitLegend"></div>
-        <canvas id="macroLimitChart"></canvas>
-      </div>
-      <div class="macro-chart-item">
-        <h3>120日新高 / 新低 · 沪深300</h3>
-        <div class="threshold-legend" id="macroHighLowLegend"></div>
-        <canvas id="macroHighLowChart"></canvas>
-      </div>
-      <div class="macro-chart-item">
-        <h3>Up/Down 25% Month（近 20 日）</h3>
-        <div class="threshold-legend" id="macroMonthLegend"></div>
-        <canvas id="macroMonthChart"></canvas>
-      </div>
-      <div class="macro-chart-item">
-        <h3>Up/Down 25% Qtr（近 60 日）</h3>
-        <div class="threshold-legend" id="macroQtrLegend"></div>
-        <canvas id="macroQtrChart"></canvas>
-      </div>
-    </div>
-  </div>
+      <div class="grid" id="metrics"></div>
 
-  <div class="card">
-    <h2>申万二级 RS 排名 Top 10</h2>
-    <p class="pipeline-hint">行业 RS = 行业内全部成分股 RS 中位数 → 从高到低取前 10 个有入选股的行业（入选为 0 则递补）→ 在行业内筛符合趋势/流动性标准的股票 → 再与全市场 RS Top 10% 交叉</p>
-    <div id="sectors"></div>
-  </div>
+      <div class="card">
+        <div class="card-head">
+          <h2 style="font-size: 1.05rem;">大盘水温 (宽度趋势)</h2>
+          <div class="range-btns" id="rangeBtns">
+            <button type="button" data-days="60">60日</button>
+            <button type="button" data-days="120" class="active">120日</button>
+            <button type="button" data-days="250">250日</button>
+            <button type="button" data-days="252">1年</button>
+            <button type="button" data-days="all">全部</button>
+          </div>
+        </div>
+        <div class="threshold-legend" id="thresholdLegend"></div>
+        <canvas id="breadthChart"></canvas>
+      </div>
 
-  <div class="card">
-    <h2>终极 Watchlist（申万二级 ∩ RS Top 10% · 近 60 日 K 线）</h2>
-    <div class="watchlist-scroll">
-      <div id="watchlist" class="watchlist-grid"></div>
-    </div>
+      <div class="card">
+        <div class="card-head">
+          <h2 style="font-size: 1.05rem;">宏观情绪极值追踪</h2>
+          <p class="pipeline-hint" style="margin:0">与上方大盘水温共用时间范围 · 虚线基于全历史 P5 / P95 分位</p>
+        </div>
+        <div class="macro-chart-grid">
+          <div class="macro-chart-item">
+            <h3>涨停 / 跌停 / 比值</h3>
+            <div class="threshold-legend" id="macroLimitLegend"></div>
+            <canvas id="macroLimitChart"></canvas>
+          </div>
+          <div class="macro-chart-item">
+            <h3>120日新高 / 新低 · 沪深300</h3>
+            <div class="threshold-legend" id="macroHighLowLegend"></div>
+            <canvas id="macroHighLowChart"></canvas>
+          </div>
+          <div class="macro-chart-item">
+            <h3>Up/Down 25% Month</h3>
+            <div class="threshold-legend" id="macroMonthLegend"></div>
+            <canvas id="macroMonthChart"></canvas>
+          </div>
+          <div class="macro-chart-item">
+            <h3>Up/Down 25% Qtr</h3>
+            <div class="threshold-legend" id="macroQtrLegend"></div>
+            <canvas id="macroQtrChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="level-section">
+      <div class="section-header">
+        <div class="step-badge">2</div>
+        <div>
+          <h2>中观：主流风口行业</h2>
+          <p class="section-desc">当前市场上最主流的、相对强度（RS）最高的行业（申万二级）。</p>
+        </div>
+      </div>
+      <div class="card">
+        <p class="pipeline-hint">行业 RS = 行业内全部成分股 RS 中位数 → 从高到低取前 10 个有入选股的行业（入选为 0 则递补）→ 在行业内筛符合趋势/流动性标准的股票 → 再与全市场 RS Top 10% 交叉</p>
+        <div id="sectors"></div>
+      </div>
+    </section>
+
+    <section class="level-section">
+      <div class="section-header">
+        <div class="step-badge">3</div>
+        <div>
+          <h2>微观：核心操作标的</h2>
+          <p class="section-desc">高 RS 行业内，且本身是高 RS 排名、处于多头趋势、流动性良好的强分歧/突破股票。</p>
+        </div>
+      </div>
+      <div class="card">
+        <p class="pipeline-hint">终极 Watchlist（申万二级主线 ∩ 全市场 RS Top 10% ∩ 流动性/趋势过滤 · 近 60 日 K 线）</p>
+        <div class="watchlist-scroll">
+          <div id="watchlist" class="watchlist-grid"></div>
+        </div>
+      </div>
+    </section>
+
   </div>
 
   <script>
@@ -399,26 +491,26 @@
       const above = rows.map((r) => r.above).filter((v) => v != null);
       const below = rows.map((r) => r.below).filter((v) => v != null);
       return {
-        pt20Low: percentile(pt20, 15),
-        pt20High: percentile(pt20, 85),
-        pt50Low: percentile(pt50, 15),
-        pt50High: percentile(pt50, 85),
-        aboveLow: percentile(above, 15),
-        aboveHigh: percentile(above, 85),
-        belowLow: percentile(below, 15),
-        belowHigh: percentile(below, 85),
+        pt20Low: percentile(pt20, 5),
+        pt20High: percentile(pt20, 95),
+        pt50Low: percentile(pt50, 5),
+        pt50High: percentile(pt50, 95),
+        aboveLow: percentile(above, 5),
+        aboveHigh: percentile(above, 95),
+        belowLow: percentile(below, 5),
+        belowHigh: percentile(below, 95),
       };
     }
 
     function buildThresholdLegend(th) {
       if (!th) return "";
       const items = [
-        { color: "#3b82f6", text: `PT20 偏低 P15 ${pct(th.pt20Low)}` },
-        { color: "#3b82f6", text: `PT20 偏高 P85 ${pct(th.pt20High)}` },
-        { color: "#a855f7", text: `PT50 偏低 P15 ${pct(th.pt50Low)}` },
-        { color: "#a855f7", text: `PT50 偏高 P85 ${pct(th.pt50High)}` },
-        { color: "#22c55e", text: `涨>5% P15 ${Math.round(th.aboveLow)}家 · P85 ${Math.round(th.aboveHigh)}家` },
-        { color: "#ef4444", text: `跌>5% P15 ${Math.round(th.belowLow)}家 · P85 ${Math.round(th.belowHigh)}家` },
+        { color: "#3b82f6", text: `PT20 偏低 P5 ${pct(th.pt20Low)}` },
+        { color: "#3b82f6", text: `PT20 偏高 P95 ${pct(th.pt20High)}` },
+        { color: "#a855f7", text: `PT50 偏低 P5 ${pct(th.pt50Low)}` },
+        { color: "#a855f7", text: `PT50 偏高 P95 ${pct(th.pt50High)}` },
+        { color: "#22c55e", text: `涨>5% P5 ${Math.round(th.aboveLow)}家 · P95 ${Math.round(th.aboveHigh)}家` },
+        { color: "#ef4444", text: `跌>5% P5 ${Math.round(th.belowLow)}家 · P95 ${Math.round(th.belowHigh)}家` },
       ];
       return items
         .map((item) => `<span style="color:${item.color}"><i style="border-color:${item.color}"></i>${item.text}</span>`)
@@ -431,8 +523,8 @@
 
     function computeMacroThresholds(rows) {
       const band = (key) => ({
-        low: percentile(colValues(rows, key), 15),
-        high: percentile(colValues(rows, key), 85),
+        low: percentile(colValues(rows, key), 5),
+        high: percentile(colValues(rows, key), 95),
       });
       return {
         limitUp: band("limit_up_count"),
@@ -466,21 +558,21 @@
       if (!th) return "";
       return {
         macroLimitLegend: legendItems([
-          { color: "#22c55e", text: `涨停 P15 ${fmtCount(th.limitUp.low)} · P85 ${fmtCount(th.limitUp.high)}` },
-          { color: "#ef4444", text: `跌停 P15 ${fmtCount(th.limitDown.low)} · P85 ${fmtCount(th.limitDown.high)}` },
-          { color: "#22d3ee", text: `比值 P15 ${fmtRatio(th.limitRatio.low)} · P85 ${fmtRatio(th.limitRatio.high)}` },
+          { color: "#22c55e", text: `涨停 P5 ${fmtCount(th.limitUp.low)} · P95 ${fmtCount(th.limitUp.high)}` },
+          { color: "#ef4444", text: `跌停 P5 ${fmtCount(th.limitDown.low)} · P95 ${fmtCount(th.limitDown.high)}` },
+          { color: "#22d3ee", text: `比值 P5 ${fmtRatio(th.limitRatio.low)} · P95 ${fmtRatio(th.limitRatio.high)}` },
         ]),
         macroHighLowLegend: legendItems([
-          { color: "#22c55e", text: `新高 P15 ${fmtCount(th.newHigh.low)} · P85 ${fmtCount(th.newHigh.high)}` },
-          { color: "#ef4444", text: `新低 P15 ${fmtCount(th.newLow.low)} · P85 ${fmtCount(th.newLow.high)}` },
+          { color: "#22c55e", text: `新高 P5 ${fmtCount(th.newHigh.low)} · P95 ${fmtCount(th.newHigh.high)}` },
+          { color: "#ef4444", text: `新低 P5 ${fmtCount(th.newLow.low)} · P95 ${fmtCount(th.newLow.high)}` },
         ]),
         macroMonthLegend: legendItems([
-          { color: "#22c55e", text: `涨>25% P15 ${fmtCount(th.upMonth.low)} · P85 ${fmtCount(th.upMonth.high)}` },
-          { color: "#ef4444", text: `跌>25% P15 ${fmtCount(th.downMonth.low)} · P85 ${fmtCount(th.downMonth.high)}` },
+          { color: "#22c55e", text: `涨>25% P5 ${fmtCount(th.upMonth.low)} · P95 ${fmtCount(th.upMonth.high)}` },
+          { color: "#ef4444", text: `跌>25% P5 ${fmtCount(th.downMonth.low)} · P95 ${fmtCount(th.downMonth.high)}` },
         ]),
         macroQtrLegend: legendItems([
-          { color: "#22c55e", text: `涨>25% P15 ${fmtCount(th.upQtr.low)} · P85 ${fmtCount(th.upQtr.high)}` },
-          { color: "#ef4444", text: `跌>25% P15 ${fmtCount(th.downQtr.low)} · P85 ${fmtCount(th.downQtr.high)}` },
+          { color: "#22c55e", text: `涨>25% P5 ${fmtCount(th.upQtr.low)} · P95 ${fmtCount(th.upQtr.high)}` },
+          { color: "#ef4444", text: `跌>25% P5 ${fmtCount(th.downQtr.low)} · P95 ${fmtCount(th.downQtr.high)}` },
         ]),
       };
     }
@@ -551,8 +643,8 @@
 
     function addCountBandLines(target, prefix, band, color, yScaleID, labelPrefix) {
       const entries = [
-        ["Low", band.low, `P15 ${fmtCount(band.low)}`],
-        ["High", band.high, `P85 ${fmtCount(band.high)}`],
+        ["Low", band.low, `P5 ${fmtCount(band.low)}`],
+        ["High", band.high, `P95 ${fmtCount(band.high)}`],
       ];
       entries.forEach(([suffix, value, text]) => {
         const line = makeThresholdLine(`${prefix}${suffix}`, yScaleID, value, color, `${labelPrefix}${text}`);
@@ -562,8 +654,8 @@
 
     function addRatioBandLines(target, prefix, band, color, yScaleID, labelPrefix) {
       [
-        ["Low", band.low, `P15 ${fmtRatio(band.low)}`],
-        ["High", band.high, `P85 ${fmtRatio(band.high)}`],
+        ["Low", band.low, `P5 ${fmtRatio(band.low)}`],
+        ["High", band.high, `P95 ${fmtRatio(band.high)}`],
       ].forEach(([suffix, value, text]) => {
         const line = makeThresholdLine(`${prefix}${suffix}`, yScaleID, value, color, `${labelPrefix}${text}`);
         if (line) target[`${prefix}${suffix}`] = line;
@@ -666,10 +758,10 @@
         pt20High: line("pt20High", "y", th.pt20High * 100, "rgba(59,130,246,0.55)", `PT20偏高 ${pct(th.pt20High)}`),
         pt50Low: line("pt50Low", "y", th.pt50Low * 100, "rgba(168,85,247,0.55)", `PT50偏低 ${pct(th.pt50Low)}`),
         pt50High: line("pt50High", "y", th.pt50High * 100, "rgba(168,85,247,0.55)", `PT50偏高 ${pct(th.pt50High)}`),
-        aboveLow: line("aboveLow", "y1", th.aboveLow, "rgba(34,197,94,0.55)", `涨>5% P15 ${Math.round(th.aboveLow)}`),
-        aboveHigh: line("aboveHigh", "y1", th.aboveHigh, "rgba(34,197,94,0.55)", `涨>5% P85 ${Math.round(th.aboveHigh)}`),
-        belowLow: line("belowLow", "y1", th.belowLow, "rgba(239,68,68,0.55)", `跌>5% P15 ${Math.round(th.belowLow)}`),
-        belowHigh: line("belowHigh", "y1", th.belowHigh, "rgba(239,68,68,0.55)", `跌>5% P85 ${Math.round(th.belowHigh)}`),
+        aboveLow: line("aboveLow", "y1", th.aboveLow, "rgba(34,197,94,0.55)", `涨>5% P5 ${Math.round(th.aboveLow)}`),
+        aboveHigh: line("aboveHigh", "y1", th.aboveHigh, "rgba(34,197,94,0.55)", `涨>5% P95 ${Math.round(th.aboveHigh)}`),
+        belowLow: line("belowLow", "y1", th.belowLow, "rgba(239,68,68,0.55)", `跌>5% P5 ${Math.round(th.belowLow)}`),
+        belowHigh: line("belowHigh", "y1", th.belowHigh, "rgba(239,68,68,0.55)", `跌>5% P95 ${Math.round(th.belowHigh)}`),
       };
     }
 
