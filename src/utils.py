@@ -14,6 +14,9 @@ import akshare as ak
 import pandas as pd
 
 from src import config
+from src.db_client import localize_datetime_series, shanghai_today
+
+__all__ = ["localize_datetime_series", "shanghai_today"]
 
 DateLike = Union[str, date, datetime, pd.Timestamp]
 
@@ -97,8 +100,11 @@ def clean_stock_name(name: str) -> bool:
 
 
 def ensure_data_dir() -> None:
-    """确保 data 目录存在。"""
+    """确保 data 目录存在，并初始化 DuckDB 表结构。"""
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    from src.db_client import init_duckdb
+
+    init_duckdb()
 
 
 def save_parquet(df: pd.DataFrame, file_path: Union[str, Path]) -> None:

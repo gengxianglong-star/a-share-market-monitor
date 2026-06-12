@@ -14,23 +14,8 @@ import pandas as pd
 from src import config
 
 
-# 广度历史 CSV 完整列定义（向后兼容旧版仅 5 列的文件）
-BREADTH_COLUMNS = [
-    "date",
-    "above_5pct_count",
-    "below_5pct_count",
-    "pt20_ratio",
-    "pt50_ratio",
-    "limit_up_count",
-    "limit_down_count",
-    "limit_up_down_ratio",
-    "new_high_60d",
-    "new_low_60d",
-    "up_25pct_month",
-    "down_25pct_month",
-    "up_25pct_qtr",
-    "down_25pct_qtr",
-]
+# 向后兼容：列定义已迁至 config.BREADTH_COLUMNS
+BREADTH_COLUMNS = config.BREADTH_COLUMNS
 
 
 def _normalize_date(value) -> pd.Timestamp:
@@ -219,32 +204,17 @@ def compute_full_market_breadth_history(enriched_df: pd.DataFrame) -> pd.DataFra
 
 
 def _load_breadth_history() -> pd.DataFrame:
-    """读取宏观广度历史 CSV，补齐缺失列。"""
-    if not config.MACRO_BREADTH_FILE.exists():
-        return pd.DataFrame(columns=BREADTH_COLUMNS)
+    """读取宏观广度历史（DuckDB）。"""
+    from src.db_client import load_breadth_history
 
-    df = pd.read_csv(config.MACRO_BREADTH_FILE)
-    for col in BREADTH_COLUMNS:
-        if col not in df.columns:
-            df[col] = np.nan
-    return df[BREADTH_COLUMNS]
+    return load_breadth_history()
 
 
 def _append_breadth_row(new_row: pd.DataFrame) -> pd.DataFrame:
-    """安全追加一行到 CSV（同日期覆盖，否则 append）。"""
-    history = _load_breadth_history()
-    new_row = new_row[BREADTH_COLUMNS]
-    trade_date = new_row["date"].iloc[0]
+    """安全追加一行到 DuckDB（同日期覆盖，否则 append）。"""
+    from src.db_client import upsert_breadth_row
 
-    if not history.empty:
-        history["date"] = pd.to_datetime(history["date"], errors="coerce").dt.strftime("%Y-%m-%d")
-        history = history[history["date"] != trade_date]
-
-    updated = pd.concat([history, new_row], ignore_index=True)
-    updated = updated.drop_duplicates(subset=["date"], keep="last")
-    updated = updated.sort_values("date").reset_index(drop=True)
-    updated.to_csv(config.MACRO_BREADTH_FILE, index=False, encoding="utf-8-sig")
-    return updated
+    return upsert_breadth_row(new_row[BREADTH_COLUMNS])
 
 
 def update_daily_breadth(
@@ -253,14 +223,14 @@ def update_daily_breadth(
     trade_date: Optional[Union[str, pd.Timestamp]] = None,
 ) -> pd.DataFrame:
     """
-    计算今日市场宽度指标，并追加写入 market_breadth_history.csv。
+    计算今日市场宽度指标，并追加写入 DuckDB market_breadth_history 表。
 
     参数
     ----
     today_df : pd.DataFrame
         今日全市场截面快照（含 date, code, close, pct_change 等）。
     rolling_df : pd.DataFrame
-        过去 150 个交易日的 Parquet 热数据池。
+        过去 150 个交易日的 DuckDB 热数据池。
     trade_date : str | Timestamp | None
         交易日期；默认取 today_df 中最新日期。
 

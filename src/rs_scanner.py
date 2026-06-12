@@ -177,6 +177,14 @@ def _attach_all_sectors(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return records
 
 
+def _is_breakout_candidate(row: pd.Series) -> bool:
+    adr = row.get("adr_5d")
+    rvol = row.get("rvol")
+    if pd.isna(adr) or pd.isna(rvol):
+        return False
+    return float(adr) < config.VCP_ADR_THRESHOLD_PCT and float(rvol) > config.ORB_RVOL_THRESHOLD
+
+
 def _build_watchlist_records(
     intersection_df: pd.DataFrame,
     sector_col: str,
@@ -185,6 +193,8 @@ def _build_watchlist_records(
     """将交集结果转为可 JSON 序列化的 Watchlist 列表。"""
     records: List[Dict[str, Any]] = []
     for _, row in intersection_df.iterrows():
+        adr_val = float(row["adr_5d"]) if pd.notna(row.get("adr_5d")) else None
+        rvol_val = float(row["rvol"]) if pd.notna(row.get("rvol")) else None
         record: Dict[str, Any] = {
             "code": row["code"],
             "name": row[name_col] if name_col and name_col in row.index and pd.notna(row[name_col]) else "",
@@ -193,6 +203,9 @@ def _build_watchlist_records(
             "ma20": round(float(row["ma20"]), 4) if pd.notna(row["ma20"]) else None,
             "ma50": round(float(row["ma50"]), 4) if pd.notna(row["ma50"]) else None,
             "close": round(float(row["close"]), 4) if pd.notna(row["close"]) else None,
+            "adr_5d": round(adr_val, 4) if adr_val is not None else None,
+            "rvol": round(rvol_val, 4) if rvol_val is not None else None,
+            "is_breakout_candidate": _is_breakout_candidate(row),
         }
         records.append(record)
     return records

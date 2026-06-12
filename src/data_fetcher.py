@@ -784,8 +784,10 @@ fetch_sector_mapping_ths = fetch_ths_sector_mapping
 
 
 def get_latest_trade_date() -> str:
-    """获取不晚于今天的最近一个 A 股交易日。"""
-    today = datetime.today().strftime("%Y-%m-%d")
+    """获取不晚于今天的最近一个 A 股交易日（Asia/Shanghai）。"""
+    from src.db_client import shanghai_today
+
+    today = shanghai_today()
     trade_df = ak.tool_trade_date_hist_sina()
     trade_dates = pd.to_datetime(trade_df["trade_date"], errors="coerce").dropna()
     trade_dates = trade_dates[trade_dates <= pd.Timestamp(today)]

@@ -132,6 +132,44 @@
       border-radius: 8px;
       overflow: hidden;
       background: #0a0e14;
+      transition: filter 0.25s ease, opacity 0.25s ease, box-shadow 0.25s ease;
+    }
+    .kline-card.watch-muted {
+      filter: grayscale(80%) opacity(60%);
+    }
+    .kline-card.watch-muted:hover {
+      filter: none;
+      opacity: 1;
+    }
+    .kline-card.watch-muted .kline-chart-frame {
+      height: 0;
+      min-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      transition: height 0.25s ease, opacity 0.25s ease;
+    }
+    .kline-card.watch-muted:hover .kline-chart-frame {
+      height: 260px;
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .kline-card.breakout-candidate {
+      border-color: rgba(59, 130, 246, 0.85);
+      box-shadow: 0 0 15px rgba(59, 130, 246, 0.6);
+    }
+    .kline-card.breakout-candidate .kline-chart-frame {
+      height: 260px;
+      opacity: 1;
+    }
+    .kline-metrics {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
+    .kline-metrics .breakout-tag {
+      color: #60a5fa;
+      font-weight: 600;
     }
     .kline-head {
       display: flex;
@@ -304,6 +342,16 @@
       return Math.round(Number(v)).toLocaleString("zh-CN");
     }
 
+    function normalizeBreadthRow(row) {
+      return {
+        ...row,
+        above: row.above_5pct_count ?? row.above,
+        below: row.below_5pct_count ?? row.below,
+        pt20: row.pt20_ratio ?? row.pt20,
+        pt50: row.pt50_ratio ?? row.pt50,
+      };
+    }
+
     function parseBreadthCsv(text) {
       const lines = text.trim().split("\n");
       if (lines.length < 2) return [];
@@ -319,12 +367,27 @@
             row[key] = raw !== "" ? Number(raw) : null;
           }
         });
-        row.above = row.above_5pct_count;
-        row.below = row.below_5pct_count;
-        row.pt20 = row.pt20_ratio;
-        row.pt50 = row.pt50_ratio;
-        return row;
+        return normalizeBreadthRow(row);
       }).filter((row) => row.pt20 != null || row.above != null);
+    }
+
+    function parseBreadthJson(records) {
+      if (!Array.isArray(records)) return [];
+      return records
+        .map((row) => normalizeBreadthRow(row))
+        .filter((row) => row.pt20 != null || row.above != null);
+    }
+
+    async function loadBreadthRows() {
+      const jsonRes = await fetch("data/market_breadth_history.json");
+      if (jsonRes.ok) {
+        return parseBreadthJson(await jsonRes.json());
+      }
+      const csvRes = await fetch("data/market_breadth_history.csv");
+      if (!csvRes.ok) {
+        throw new Error("无法加载 market_breadth_history.json 或 .csv");
+      }
+      return parseBreadthCsv(await csvRes.text());
     }
 
     function escHtml(value) {
@@ -633,6 +696,8 @@
       return rows.slice(-Number(days));
     }
 
+    const NO_GRID = { drawOnChartArea: false, color: "rgba(36,48,68,0.25)" };
+
     const MACRO_CHART_BASE = {
       responsive: true,
       maintainAspectRatio: true,
@@ -640,11 +705,11 @@
       scales: {
         x: {
           ticks: { color: "#8fa3bf", maxTicksLimit: 10 },
-          grid: { color: "rgba(36,48,68,0.5)" },
+          grid: NO_GRID,
         },
         y: {
           ticks: { color: "#8fa3bf" },
-          grid: { color: "rgba(36,48,68,0.35)" },
+          grid: NO_GRID,
         },
       },
       plugins: {
@@ -746,7 +811,7 @@
           y: { position: "left", title: { display: true, text: "家数", color: "#8fa3bf", font: { size: 11 } } },
           y1: {
             position: "right",
-            grid: { drawOnChartArea: false },
+            grid: NO_GRID,
             ticks: { color: "#8fa3bf" },
             title: { display: true, text: "比值", color: "#8fa3bf", font: { size: 11 } },
           },
@@ -860,20 +925,20 @@
           scales: {
             x: {
               ticks: { color: "#8fa3bf", maxTicksLimit: 12 },
-              grid: { color: "rgba(36,48,68,0.5)" },
+              grid: NO_GRID,
             },
             y: {
               min: 0,
               max: 100,
               position: "left",
               ticks: { color: "#8fa3bf", callback: (v) => v + "%" },
-              grid: { color: "rgba(36,48,68,0.35)" },
+              grid: NO_GRID,
               title: { display: true, text: "PT20 / PT50", color: "#8fa3bf", font: { size: 11 } },
             },
             y1: {
               position: "right",
               ticks: { color: "#8fa3bf" },
-              grid: { drawOnChartArea: false },
+              grid: NO_GRID,
               title: { display: true, text: "涨/跌>5% 家数", color: "#8fa3bf", font: { size: 11 } },
             },
           },
@@ -922,33 +987,22 @@
         return;
       }
 
-      const scrollRoot = document.querySelector(".watchlist-scroll");
-      if (!window.IntersectionObserver || !scrollRoot) {
-        items.slice(0, 8).forEach((item, idx) => renderOneKlineChart(item, idx));
-        return;
-      }
-
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (!entry.isIntersecting) return;
-            const host = entry.target;
-            const idx = Number(host.dataset.idx);
-            observer.unobserve(host);
-            renderOneKlineChart(items[idx], idx);
-          });
-        },
-        { root: scrollRoot, rootMargin: "240px 0px" }
-      );
-
       items.forEach((item, idx) => {
         const host = document.getElementById(`kline-host-${idx}`);
         if (!host) return;
-        host.dataset.idx = String(idx);
-        if (idx < 6) {
+        const card = host.closest(".kline-card");
+
+        if (item.is_breakout_candidate === true) {
           renderOneKlineChart(item, idx);
-        } else {
-          observer.observe(host);
+          return;
+        }
+
+        if (card) {
+          card.addEventListener(
+            "mouseenter",
+            () => renderOneKlineChart(item, idx),
+            { once: true }
+          );
         }
       });
     }
@@ -973,8 +1027,8 @@
             textColor: "#8fa3bf",
           },
           grid: {
-            vertLines: { color: "#1a2433" },
-            horzLines: { color: "#1a2433" },
+            vertLines: { visible: false },
+            horzLines: { visible: false },
           },
           timeScale: {
             borderColor: "#243044",
@@ -1036,17 +1090,15 @@
         throw new Error("Chart.js 未加载，请检查网络能否访问 cdn.jsdelivr.net");
       }
 
-      const [breadthRes, watchRes] = await Promise.all([
-        fetch("data/market_breadth_history.csv"),
+      const [breadthRows, watchRes] = await Promise.all([
+        loadBreadthRows(),
         fetch("data/daily_watchlist.json"),
       ]);
-      if (!breadthRes.ok) throw new Error("无法加载 market_breadth_history.csv");
       if (!watchRes.ok) throw new Error("无法加载 daily_watchlist.json");
 
-      const breadthText = await breadthRes.text();
       const watch = await watchRes.json();
 
-      allBreadthRows = parseBreadthCsv(breadthText);
+      allBreadthRows = breadthRows;
 
       breadthThresholds = computeBreadthThresholds(allBreadthRows);
       macroThresholds = computeMacroThresholds(allBreadthRows);
@@ -1107,14 +1159,22 @@
             const name = escHtml(item.name || "—");
             const rs = escHtml(item.rs_score ?? "—");
             const industry = escHtml(item.sector || (item.sectors && item.sectors[0]) || "—");
+            const isBreakout = item.is_breakout_candidate === true;
+            const cardClass = isBreakout ? "kline-card breakout-candidate" : "kline-card watch-muted";
+            const adr = item.adr_5d != null ? Number(item.adr_5d).toFixed(2) : "—";
+            const rvol = item.rvol != null ? Number(item.rvol).toFixed(2) : "—";
+            const breakoutHint = isBreakout
+              ? '<span class="breakout-tag">突破候选</span>'
+              : '<span>悬停查看 K 线</span>';
             return `
-          <div class="kline-card">
+          <div class="${cardClass}">
             <div class="kline-head">
               <div class="kline-head-left">
                 <div class="kline-title-row">
                   <span class="kline-ticker">${ticker}</span>
                   <span class="kline-name">${name}<span class="kline-industry">${industry !== "—" ? " · " + industry : ""}</span></span>
                 </div>
+                <div class="kline-metrics">ADR5 ${adr}% · RVOL ${rvol} · ${breakoutHint}</div>
               </div>
               <span class="kline-rs">RS <strong>${rs}</strong></span>
             </div>

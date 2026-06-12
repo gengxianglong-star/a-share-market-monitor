@@ -27,9 +27,21 @@ from src.data_fetcher import (
     get_latest_trade_date,
     load_stock_name_map,
 )
+from src.db_client import (
+    duckdb_is_ready,
+    load_rolling_klines,
+    migrate_legacy_storage,
+    save_rolling_klines,
+)
 from src.kline_processor import add_technical_indicators, trim_to_rolling_window
 from src.rs_scanner import run_daily_scan
-from src.utils import ensure_data_dir, load_parquet, save_parquet
+from src.utils import ensure_data_dir
+
+# 滚动池合并时需重算的衍生列
+_DERIVED_KLINE_COLS = (
+    "ma20", "ma50", "vol_ma20", "daily_range_pct", "adr_5d", "vol_ma50", "rvol",
+)
+_REQUIRED_METRIC_COLS = {"adr_5d", "rvol", "vol_ma50"}
 
 # 清除可能影响云端/本地的代理，避免 AkShare 请求失败
 for _proxy_key in (
@@ -48,9 +60,17 @@ def _clear_proxy_env() -> None:
     os.environ["NO_PROXY"] = "*"
 
 
+def _ensure_rolling_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """若 DuckDB 中缺少 VCP/RVOL 衍生列，则向量化重算。"""
+    if _REQUIRED_METRIC_COLS.issubset(df.columns) and df["adr_5d"].notna().any():
+        return df
+    print("🔄 补算 ADR / RVOL 等衍生指标...")
+    return add_technical_indicators(df)
+
+
 def _update_rolling_pool(rolling_df: pd.DataFrame, snapshot: pd.DataFrame) -> pd.DataFrame:
     """合并今日截面，重算指标，裁剪至 150 日滑动窗口。"""
-    base_cols = [c for c in rolling_df.columns if c not in ("ma20", "ma50", "vol_ma20")]
+    base_cols = [c for c in rolling_df.columns if c not in _DERIVED_KLINE_COLS]
     rolling_base = rolling_df[base_cols].copy()
     merged = pd.concat([rolling_base, snapshot], ignore_index=True)
     merged["date"] = pd.to_datetime(merged["date"], errors="coerce")
@@ -62,21 +82,23 @@ def _update_rolling_pool(rolling_df: pd.DataFrame, snapshot: pd.DataFrame) -> pd
 def main() -> None:
     _clear_proxy_env()
     ensure_data_dir()
+    migrate_legacy_storage()
 
     print("=" * 72)
     print(f"A-Share Market Monitor 自动化流水线 | {datetime.now():%Y-%m-%d %H:%M:%S}")
     print("=" * 72)
 
-    if not config.ROLLING_KLINES_FILE.exists():
-        print(f"❌ 未找到 {config.ROLLING_KLINES_FILE}，请先运行 init_database.py 导入通达信数据。")
+    if not duckdb_is_ready():
+        print(f"❌ DuckDB 中无滚动 K 线数据 ({config.DUCKDB_FILE})，请先运行 init_database.py 导入通达信数据。")
         sys.exit(1)
 
     trade_date = get_latest_trade_date()
     print(f"📅 目标交易日: {trade_date}")
 
     # --- 1. 加载滚动 K 线池 ---
-    print("🗄️  加载滚动 K 线池...")
-    rolling_df = load_parquet(config.ROLLING_KLINES_FILE)
+    print("🗄️  加载滚动 K 线池 (DuckDB)...")
+    rolling_df = load_rolling_klines()
+    rolling_df = _ensure_rolling_metrics(rolling_df)
     rolling_df["date"] = pd.to_datetime(rolling_df["date"], errors="coerce")
     existing_dates = set(rolling_df["date"].dt.strftime("%Y-%m-%d"))
     data_updated = False
@@ -100,9 +122,9 @@ def main() -> None:
 
         print("🔄 更新 150 日滑动窗口...")
         enriched = _update_rolling_pool(rolling_df, snapshot)
-        save_parquet(enriched, config.ROLLING_KLINES_FILE)
+        save_rolling_klines(enriched)
         data_updated = True
-        print(f"💾 热数据池已更新 | {enriched['date'].nunique()} 个交易日 | {len(enriched):,} 行")
+        print(f"💾 热数据池已写入 DuckDB | {enriched['date'].nunique()} 个交易日 | {len(enriched):,} 行")
 
     # 今日截面（用于宽度计算）：取 enriched 中最新一天
     today_df = enriched[enriched["date"] == pd.Timestamp(trade_date)].copy()
@@ -114,7 +136,7 @@ def main() -> None:
     try:
         breadth_row = update_daily_breadth(today_df=today_df, rolling_df=enriched, trade_date=trade_date)
         print(
-            f"📊 宽度已写入 CSV | 涨>5%: {int(breadth_row['above_5pct_count'].iloc[0])} 家 | "
+            f"📊 宽度已写入 DuckDB | 涨>5%: {int(breadth_row['above_5pct_count'].iloc[0])} 家 | "
             f"PT20: {float(breadth_row['pt20_ratio'].iloc[0]):.1%}"
         )
     except Exception as exc:

@@ -7,8 +7,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 # 三驾马车数据持久化路径
-MACRO_BREADTH_FILE = DATA_DIR / "market_breadth_history.csv" # 宏观广度历史冷数据
-ROLLING_KLINES_FILE = DATA_DIR / "rolling_klines.parquet"    # 微观滚动K线热数据池
+DUCKDB_FILE = DATA_DIR / "market_monitor.duckdb"               # DuckDB 主存储（K线池 + 广度历史）
+BREADTH_EXPORT_JSON = DATA_DIR / "market_breadth_history.json" # 静态看板用的广度 JSON 导出
+MACRO_BREADTH_FILE = DATA_DIR / "market_breadth_history.csv" # [已废弃] 仅用于 legacy 迁移
+ROLLING_KLINES_FILE = DATA_DIR / "rolling_klines.parquet"    # [已废弃] 仅用于 legacy 迁移
 DAILY_WATCHLIST_FILE = DATA_DIR / "daily_watchlist.json"     # 每日最终输出观察名单
 SECTOR_MAPPING_FILE = DATA_DIR / "sector_mapping.parquet"    # 申万二级 / 概念 成分股映射缓存
 SECTOR_MAPPING_SOURCE = "sw"  # sw=申万二级(默认) | ths=同花顺概念 | em=东财概念
@@ -27,6 +29,26 @@ RS_WEIGHTS = {
 }
 # 相对强度百分位阈值 (90 代表全市场最强的前 10% 股票)
 RS_PERCENTILE_THRESHOLD = 90
+# VCP 波动收缩 + 相对成交量突破阈值
+VCP_ADR_THRESHOLD_PCT = 5.0
+ORB_RVOL_THRESHOLD = 2.0
+# 宏观广度历史 DuckDB / JSON 列定义
+BREADTH_COLUMNS = [
+    "date",
+    "above_5pct_count",
+    "below_5pct_count",
+    "pt20_ratio",
+    "pt50_ratio",
+    "limit_up_count",
+    "limit_down_count",
+    "limit_up_down_ratio",
+    "new_high_60d",
+    "new_low_60d",
+    "up_25pct_month",
+    "down_25pct_month",
+    "up_25pct_qtr",
+    "down_25pct_qtr",
+]
 # ==============================================================================
 # 🛡️ 3. 股票过滤漏斗底线 (Quality & Trend Filters)
 # ==============================================================================

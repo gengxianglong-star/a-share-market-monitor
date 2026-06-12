@@ -3,7 +3,7 @@
 
 流程：
 1. 在通达信里执行「盘后数据下载」（建议覆盖 2019 年至今）
-2. 本地运行本脚本，读取 vipdoc 生成 CSV + Parquet
+2. 本地运行本脚本，读取 vipdoc 写入 DuckDB + 看板 JSON
 3. git push 将 data/ 目录推上 GitHub
 """
 
@@ -20,12 +20,13 @@ if str(ROOT_DIR) not in sys.path:
 
 from src import config
 from src.breadth_engine import compute_full_market_breadth_history
+from src.db_client import replace_breadth_history, save_rolling_klines
 from src.data_fetcher import read_local_tdx_market
 from src.kline_processor import (
     add_technical_indicators,
     extract_rolling_hot_data,
 )
-from src.utils import ensure_data_dir, save_parquet
+from src.utils import ensure_data_dir
 
 
 def _parse_args() -> argparse.Namespace:
@@ -80,14 +81,14 @@ def main() -> None:
     print("[步骤 4/4] 截取微观热数据池...")
     hot_df = extract_rolling_hot_data(enriched_df)
 
-    breadth_df.to_csv(config.MACRO_BREADTH_FILE, index=False, encoding="utf-8-sig")
-    save_parquet(hot_df, config.ROLLING_KLINES_FILE)
+    replace_breadth_history(breadth_df)
+    save_rolling_klines(hot_df)
 
     elapsed = (time.time() - start_time) / 60.0
     print("=" * 72)
     print("阶段一完成！请将 data/ 目录推上 GitHub：")
-    print(f"  宏观冷数据: {config.MACRO_BREADTH_FILE}  ({len(breadth_df)} 个交易日)")
-    print(f"  微观热数据: {config.ROLLING_KLINES_FILE}  ({len(hot_df):,} 行)")
+    print(f"  DuckDB:     {config.DUCKDB_FILE}  (K线池 {len(hot_df):,} 行 + 广度 {len(breadth_df)} 天)")
+    print(f"  看板 JSON:  {config.BREADTH_EXPORT_JSON}")
     print(f"  耗时: {elapsed:.1f} 分钟")
     print()
     print("  git add data/")

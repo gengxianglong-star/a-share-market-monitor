@@ -1,8 +1,8 @@
 """
-仅重算 market_breadth_history.csv（完整宏观情绪列）。
+仅重算宏观广度历史（完整宏观情绪列，写入 DuckDB）。
 
 适用：已有通达信本地日线，想补全历史趋势图，不必重跑整个 init_database。
-完成后 git push data/market_breadth_history.csv，云端 daily_job 每天只追加一行。
+完成后 git push data/market_monitor.duckdb 与 data/market_breadth_history.json。
 """
 
 from __future__ import annotations
@@ -19,12 +19,13 @@ if str(ROOT_DIR) not in sys.path:
 from src import config
 from src.breadth_engine import compute_full_market_breadth_history
 from src.data_fetcher import read_local_tdx_market
+from src.db_client import replace_breadth_history
 from src.kline_processor import add_technical_indicators
 from src.utils import ensure_data_dir
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="从通达信本地日线重算宏观广度 CSV")
+    parser = argparse.ArgumentParser(description="从通达信本地日线重算宏观广度 DuckDB")
     parser.add_argument(
         "--tdxdir",
         type=str,
@@ -52,7 +53,7 @@ def main() -> None:
     ensure_data_dir()
 
     print("=" * 72)
-    print("重算宏观广度历史 CSV")
+    print("重算宏观广度历史 (DuckDB)")
     print(f"通达信目录: {args.tdxdir}")
     print(f"起始日期:   {args.start}")
     print("=" * 72)
@@ -69,12 +70,12 @@ def main() -> None:
 
     print("[3/3] 向量化计算完整广度历史...")
     breadth_df = compute_full_market_breadth_history(enriched_df)
-    breadth_df.to_csv(config.MACRO_BREADTH_FILE, index=False, encoding="utf-8-sig")
+    replace_breadth_history(breadth_df)
 
     elapsed = (time.time() - start_time) / 60.0
     sample = breadth_df.dropna(subset=["limit_up_count"]).tail(1)
     print("=" * 72)
-    print(f"已写入: {config.MACRO_BREADTH_FILE}")
+    print(f"已写入: {config.DUCKDB_FILE} + {config.BREADTH_EXPORT_JSON}")
     print(f"交易日: {len(breadth_df)} 天 | 耗时: {elapsed:.1f} 分钟")
     if not sample.empty:
         row = sample.iloc[0]
@@ -83,7 +84,7 @@ def main() -> None:
             f"跌停 {int(row['limit_down_count'])} | 60日新高 {int(row['new_high_60d'])}"
         )
     print()
-    print("  git add data/market_breadth_history.csv")
+    print("  git add data/market_monitor.duckdb data/market_breadth_history.json")
     print('  git commit -m "chore: backfill macro breadth history"')
     print("  git push")
     print("=" * 72)
