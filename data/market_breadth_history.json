@@ -27182,5 +27182,21 @@
     "down_25pct_month":397,
     "up_25pct_qtr":428,
     "down_25pct_qtr":1055
+  },
+  {
+    "date":"2026-06-12",
+    "above_5pct_count":318,
+    "below_5pct_count":48,
+    "pt20_ratio":0.1831111111,
+    "pt50_ratio":0.2175555556,
+    "limit_up_count":50,
+    "limit_down_count":3,
+    "limit_up_down_ratio":16.67,
+    "new_high_60d":112,
+    "new_low_60d":133,
+    "up_25pct_month":152,
+    "down_25pct_month":266,
+    "up_25pct_qtr":449,
+    "down_25pct_qtr":891
   }
 ]
