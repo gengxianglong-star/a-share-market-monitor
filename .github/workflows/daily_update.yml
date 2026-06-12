@@ -1,4 +1,5 @@
 # A-Share Market Monitor — 云端每日自动更新
+# DuckDB 存 Release；JSON/看板数据仍 commit 到 data/
 name: A-Share Market Monitor Daily Update
 
 on:
@@ -31,12 +32,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Download DuckDB from Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data
+          echo "尝试从 Release data-latest 下载 DuckDB..."
+          gh release download data-latest \
+            --pattern "market_monitor.duckdb" \
+            --dir data/ \
+            || echo "未找到历史数据库，将尝试从仓库内 legacy 文件迁移初始化。"
+
       - name: Run Daily Data Pipeline
         env:
           NO_PROXY: "*"
         run: python daily_job.py
 
-      - name: Commit and Push Changes
+      - name: Upload DuckDB to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: data-latest
+          name: "📊 最新市场数据 (Latest Data)"
+          body: "由 GitHub Actions 自动更新的 A 股 Market Monitor DuckDB 文件。"
+          files: data/market_monitor.duckdb
+          make_latest: true
+
+      - name: Commit and Push JSON / Watchlist
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"

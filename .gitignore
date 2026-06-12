@@ -12,10 +12,13 @@ env/
 .vscode/
 .idea/
 
-# 注意：我们【不忽略】 data/ 目录，因为我们需要将这三个核心文件推送到 GitHub
-# 但如果后续有其他临时拉取的全市场 dump 文件，可以在这里忽略
+# 注意：data/ 中小文件（JSON、看板等）仍提交 Git；DuckDB 走 GitHub Release
 *temp*.csv
 *dump*.parquet
+
+# DuckDB 数据库（大文件，由 Release data-latest 托管）
+*.duckdb
+data/market_monitor.duckdb
 
 # 本地拉取断点缓存（不上传 GitHub）
 data/.fetch_cache/
