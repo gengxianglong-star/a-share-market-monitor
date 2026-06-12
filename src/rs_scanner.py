@@ -79,7 +79,8 @@ def _apply_stock_funnel(snapshot: pd.DataFrame) -> pd.Series:
     Qullamaggie 个股过滤漏斗（向量化布尔掩码）：
     - Price > MA20 > MA50
     - MA50 向上发散
-    - 20 日均成交额 >= 1 亿
+    - 当日成交额 >= 5 亿
+    - 20 日均成交额 >= 5 亿
     - 上市满 60 个交易日
     - 近 60 日至少 1 次涨停（涨停基因）
     """
@@ -87,12 +88,14 @@ def _apply_stock_funnel(snapshot: pd.DataFrame) -> pd.Series:
         (snapshot["close"] > snapshot["ma20"])
         & (snapshot["ma20"] > snapshot["ma50"])
         & (snapshot["ma50"] > snapshot["ma50_lag"])
+        & (snapshot["amount"] >= config.MIN_DAILY_AMOUNT)
         & (snapshot["vol_ma20"] >= config.MIN_VOLUME_MA20)
         & (snapshot["listing_days"] >= config.MIN_LISTING_DAYS)
         & (snapshot["limit_up_60d"] >= config.MIN_LIMIT_UP_COUNT_60D)
         & snapshot["ma20"].notna()
         & snapshot["ma50"].notna()
         & snapshot["ma50_lag"].notna()
+        & snapshot["amount"].notna()
         & snapshot["vol_ma20"].notna()
     )
     return mask
@@ -192,7 +195,7 @@ def _attach_all_sectors(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _is_breakout_candidate(row: pd.Series) -> bool:
-    adr = row.get("adr_5d")
+    adr = row.get("adr_20d")
     rvol = row.get("rvol")
     if pd.isna(adr) or pd.isna(rvol):
         return False
@@ -207,7 +210,7 @@ def _build_watchlist_records(
     """将交集结果转为可 JSON 序列化的 Watchlist 列表。"""
     records: List[Dict[str, Any]] = []
     for _, row in intersection_df.iterrows():
-        adr_val = float(row["adr_5d"]) if pd.notna(row.get("adr_5d")) else None
+        adr_val = float(row["adr_20d"]) if pd.notna(row.get("adr_20d")) else None
         rvol_val = float(row["rvol"]) if pd.notna(row.get("rvol")) else None
         record: Dict[str, Any] = {
             "code": row["code"],
@@ -217,7 +220,7 @@ def _build_watchlist_records(
             "ma20": round(float(row["ma20"]), 4) if pd.notna(row["ma20"]) else None,
             "ma50": round(float(row["ma50"]), 4) if pd.notna(row["ma50"]) else None,
             "close": round(float(row["close"]), 4) if pd.notna(row["close"]) else None,
-            "adr_5d": round(adr_val, 4) if adr_val is not None else None,
+            "adr_20d": round(adr_val, 4) if adr_val is not None else None,
             "rvol": round(rvol_val, 4) if rvol_val is not None else None,
             "is_breakout_candidate": _is_breakout_candidate(row),
         }

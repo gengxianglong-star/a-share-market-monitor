@@ -39,9 +39,9 @@ from src.utils import ensure_data_dir
 
 # 滚动池合并时需重算的衍生列
 _DERIVED_KLINE_COLS = (
-    "ma20", "ma50", "vol_ma20", "daily_range_pct", "adr_5d", "vol_ma50", "rvol",
+    "ma20", "ma50", "vol_ma20", "daily_range_pct", "adr_20d", "vol_ma50", "rvol",
 )
-_REQUIRED_METRIC_COLS = {"adr_5d", "rvol", "vol_ma50"}
+_REQUIRED_METRIC_COLS = {"adr_20d", "rvol", "vol_ma50"}
 
 # 清除可能影响云端/本地的代理，避免 AkShare 请求失败
 for _proxy_key in (
@@ -62,7 +62,7 @@ def _clear_proxy_env() -> None:
 
 def _ensure_rolling_metrics(df: pd.DataFrame) -> pd.DataFrame:
     """若 DuckDB 中缺少 VCP/RVOL 衍生列，则向量化重算。"""
-    if _REQUIRED_METRIC_COLS.issubset(df.columns) and df["adr_5d"].notna().any():
+    if _REQUIRED_METRIC_COLS.issubset(df.columns) and df["adr_20d"].notna().any():
         return df
     print("🔄 补算 ADR / RVOL 等衍生指标...")
     return add_technical_indicators(df)

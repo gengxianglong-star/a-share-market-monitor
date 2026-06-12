@@ -12,20 +12,28 @@ import sys
 import time
 from pathlib import Path
 
+import pandas as pd
+
 ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from src import config
 from src.breadth_engine import compute_full_market_breadth_history
-from src.data_fetcher import read_local_tdx_market
+from src.data_fetcher import fetch_akshare_close_market, read_local_tdx_market
 from src.db_client import replace_breadth_history
 from src.kline_processor import add_technical_indicators
 from src.utils import ensure_data_dir
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="从通达信本地日线重算宏观广度 DuckDB")
+    parser = argparse.ArgumentParser(description="重算宏观广度历史（DuckDB + JSON）")
+    parser.add_argument(
+        "--source",
+        choices=("auto", "tdx", "akshare"),
+        default="auto",
+        help="数据来源：auto=优先通达信，否则 AkShare（默认 auto）",
+    )
     parser.add_argument(
         "--tdxdir",
         type=str,
@@ -47,6 +55,23 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _load_market_history(args: argparse.Namespace) -> pd.DataFrame:
+    tdx_path = Path(args.tdxdir)
+    use_tdx = args.source == "tdx" or (
+        args.source == "auto" and tdx_path.exists()
+    )
+    if use_tdx:
+        print(f"[1/3] 读取通达信本地日线 ({tdx_path})...")
+        return read_local_tdx_market(
+            tdxdir=tdx_path,
+            workers=args.workers,
+            start_date=args.start,
+        )
+
+    print("[1/3] 通达信不可用，改用 AkShare 拉取全市场日线（较慢）...")
+    return fetch_akshare_close_market(start_date=args.start, workers=args.workers)
+
+
 def main() -> None:
     args = _parse_args()
     start_time = time.time()
@@ -54,16 +79,12 @@ def main() -> None:
 
     print("=" * 72)
     print("重算宏观广度历史 (DuckDB)")
+    print(f"数据来源:   {args.source}")
     print(f"通达信目录: {args.tdxdir}")
     print(f"起始日期:   {args.start}")
     print("=" * 72)
 
-    print("[1/3] 读取通达信本地日线...")
-    raw_df = read_local_tdx_market(
-        tdxdir=Path(args.tdxdir),
-        workers=args.workers,
-        start_date=args.start,
-    )
+    raw_df = _load_market_history(args)
 
     print("[2/3] 计算技术指标...")
     enriched_df = add_technical_indicators(raw_df)
@@ -77,11 +98,11 @@ def main() -> None:
     print("=" * 72)
     print(f"已写入: {config.DUCKDB_FILE} + {config.BREADTH_EXPORT_JSON}")
     print(f"交易日: {len(breadth_df)} 天 | 耗时: {elapsed:.1f} 分钟")
-    if not sample.empty:
+    if not sample.empty and pd.notna(sample.iloc[0]["new_high_120d"]):
         row = sample.iloc[0]
         print(
             f"最新样本 {row['date']}: 涨停 {int(row['limit_up_count'])} / "
-            f"跌停 {int(row['limit_down_count'])} | 60日新高 {int(row['new_high_60d'])}"
+            f"跌停 {int(row['limit_down_count'])} | 120日新高 {int(row['new_high_120d'])}"
         )
     print()
     print("  git add data/market_monitor.duckdb data/market_breadth_history.json")

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import akshare as ak
+import numpy as np
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -471,6 +472,101 @@ def read_local_tdx_market(
     return merged
 
 
+def _code_to_akshare_symbol(code: str) -> str:
+    return str(code).lower().split(".", 1)[-1]
+
+
+def _fetch_one_akshare_daily(code: str, start_date: str) -> Optional[pd.DataFrame]:
+    """拉取单只股票日线（AkShare），用于无通达信时的广度历史重算。"""
+    symbol = _code_to_akshare_symbol(code)
+    start = start_date.replace("-", "")
+    for attempt in range(MAX_RETRIES):
+        try:
+            raw = ak.stock_zh_a_hist(
+                symbol=symbol,
+                period="daily",
+                start_date=start,
+                adjust="qfq",
+            )
+            if raw is None or raw.empty:
+                return None
+            work = raw.rename(columns={"日期": "date", "收盘": "close"})
+            work["date"] = pd.to_datetime(work["date"], errors="coerce")
+            work["code"] = code
+            work["close"] = pd.to_numeric(work["close"], errors="coerce")
+            work = work.dropna(subset=["date", "close"])
+            if work.empty:
+                return None
+            work = work.sort_values("date")
+            work["pct_change"] = work["close"].pct_change() * 100.0
+            return work[["date", "code", "close", "pct_change"]]
+        except Exception:
+            time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+    return None
+
+
+def fetch_akshare_close_market(
+    start_date: Optional[str] = None,
+    workers: Optional[int] = None,
+) -> pd.DataFrame:
+    """
+    通过 AkShare 逐只拉取 A 股日线（无通达信时的 backfill 备用）。
+    仅保留广度计算所需列：date, code, close, pct_change。
+    """
+    start = start_date or config.FULL_HISTORY_START_DATE
+    name_df = ak.stock_info_a_code_name()
+    codes = [
+        symbol_to_code(str(row["code"]))
+        for _, row in name_df.iterrows()
+        if is_mainboard_a_share_code(symbol_to_code(str(row["code"])))
+        and clean_stock_name(str(row["name"]))
+    ]
+    thread_count = workers or config.AKSHARE_UPDATE_WORKERS
+    frames: List[pd.DataFrame] = []
+    failed = 0
+
+    print(f"[AkShare] 拉取 {len(codes)} 只日线 | 起始 {start} | 并发 {thread_count}")
+
+    with ThreadPoolExecutor(max_workers=thread_count) as executor:
+        futures = {
+            executor.submit(_fetch_one_akshare_daily, code, start): code
+            for code in codes
+        }
+        with tqdm(total=len(codes), desc="AkShare 日线", unit="stock") as progress:
+            for future in as_completed(futures):
+                try:
+                    stock_df = future.result()
+                except Exception:
+                    stock_df = None
+                if stock_df is None or stock_df.empty:
+                    failed += 1
+                else:
+                    frames.append(stock_df)
+                progress.update(1)
+
+    if not frames:
+        raise RuntimeError("AkShare 日线拉取失败：未获得任何有效数据")
+
+    merged = pd.concat(frames, ignore_index=True)
+    merged["date"] = pd.to_datetime(merged["date"], errors="coerce")
+    merged = merged.dropna(subset=["date", "close"])
+    for col in ("open", "high", "low"):
+        merged[col] = merged["close"]
+    merged["volume"] = np.nan
+    merged["amount"] = np.nan
+    merged = merged.sort_values(["code", "date"]).reset_index(drop=True)
+
+    if failed:
+        print(f"[警告] {failed} 只股票 AkShare 拉取失败，已跳过。")
+
+    print(
+        f"[完成] AkShare 合并 {len(merged):,} 行 | "
+        f"{merged['code'].nunique()} 只股票 | "
+        f"区间 {merged['date'].min().date()} ~ {merged['date'].max().date()}"
+    )
+    return merged
+
+
 def fetch_akshare_market_snapshot(trade_date: Optional[str] = None) -> pd.DataFrame:
     """
     通过 AkShare 一次请求获取全市场 A 股当日截面行情。
@@ -781,6 +877,39 @@ def fetch_sector_mapping(force_refresh: bool = False) -> pd.DataFrame:
 
 # 兼容旧引用
 fetch_sector_mapping_ths = fetch_ths_sector_mapping
+
+
+def fetch_hs300_close_series(start_date: Optional[str] = None) -> pd.DataFrame:
+    """
+    拉取沪深300（000300）日收盘价，供宏观广度图右轴叠加。
+
+    返回列：date (YYYY-MM-DD), hs300_close
+    """
+    start = start_date or config.FULL_HISTORY_START_DATE
+    last_error: Optional[Exception] = None
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            raw = ak.index_zh_a_hist(
+                symbol=config.HS300_INDEX_SYMBOL,
+                period="daily",
+                start_date=start.replace("-", ""),
+            )
+            if raw is None or raw.empty:
+                raise RuntimeError("沪深300 日线为空")
+
+            work = raw.rename(columns={"日期": "date", "收盘": "hs300_close"})
+            work["date"] = pd.to_datetime(work["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            work["hs300_close"] = pd.to_numeric(work["hs300_close"], errors="coerce")
+            out = work[["date", "hs300_close"]].dropna(subset=["date", "hs300_close"])
+            out = out[out["date"] >= start].sort_values("date").reset_index(drop=True)
+            return out
+        except Exception as exc:
+            last_error = exc
+            time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+
+    print(f"[警告] 无法获取沪深300收盘价: {last_error}")
+    return pd.DataFrame(columns=["date", "hs300_close"])
 
 
 def get_latest_trade_date() -> str:

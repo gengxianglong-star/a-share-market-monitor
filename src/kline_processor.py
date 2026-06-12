@@ -167,8 +167,8 @@ def add_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
         lambda s: s.rolling(config.MA_SHORT_PERIOD, min_periods=config.MA_SHORT_PERIOD).mean()
     )
     work_df["daily_range_pct"] = (work_df["high"] - work_df["low"]) / work_df["close"] * 100.0
-    work_df["adr_5d"] = grouped["daily_range_pct"].transform(
-        lambda s: s.rolling(5, min_periods=5).mean()
+    work_df["adr_20d"] = grouped["daily_range_pct"].transform(
+        lambda s: s.rolling(config.ADR_PERIOD, min_periods=config.ADR_PERIOD).mean()
     )
     work_df["vol_ma50"] = grouped["volume"].transform(
         lambda s: s.rolling(50, min_periods=50).mean()

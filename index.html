@@ -132,35 +132,14 @@
       border-radius: 8px;
       overflow: hidden;
       background: #0a0e14;
-      transition: filter 0.25s ease, opacity 0.25s ease, box-shadow 0.25s ease;
-    }
-    .kline-card.watch-muted {
-      filter: grayscale(80%) opacity(60%);
-    }
-    .kline-card.watch-muted:hover {
-      filter: none;
-      opacity: 1;
-    }
-    .kline-card.watch-muted .kline-chart-frame {
-      height: 0;
-      min-height: 0;
-      overflow: hidden;
-      opacity: 0;
-      pointer-events: none;
-      transition: height 0.25s ease, opacity 0.25s ease;
-    }
-    .kline-card.watch-muted:hover .kline-chart-frame {
-      height: 260px;
-      opacity: 1;
-      pointer-events: auto;
+      transition: box-shadow 0.25s ease;
     }
     .kline-card.breakout-candidate {
       border-color: rgba(59, 130, 246, 0.85);
       box-shadow: 0 0 15px rgba(59, 130, 246, 0.6);
     }
     .kline-card.breakout-candidate .kline-chart-frame {
-      height: 260px;
-      opacity: 1;
+      height: 304px;
     }
     .kline-metrics {
       font-size: 0.72rem;
@@ -215,8 +194,11 @@
       background: #334155;
       border-radius: 4px;
     }
-    .kline-chart-frame { height: 260px; background: #000; }
+    .kline-chart-frame { height: 304px; background: #000; }
     .kline-chart-host { width: 100%; height: 100%; }
+    .kline-chart-host a[href*="tradingview.com"] {
+      display: none !important;
+    }
     .kline-empty {
       display: flex;
       align-items: center;
@@ -251,7 +233,7 @@
     .muted { color: var(--muted); font-size: 0.85rem; }
     @media (max-width: 640px) {
       .watchlist-grid { grid-template-columns: 1fr; }
-      .kline-chart-frame { height: 220px; }
+      .kline-chart-frame { height: 256px; }
     }
   </style>
 </head>
@@ -290,7 +272,7 @@
         <canvas id="macroLimitChart"></canvas>
       </div>
       <div class="macro-chart-item">
-        <h3>60日新高 / 新低</h3>
+        <h3>120日新高 / 新低 · 沪深300</h3>
         <div class="threshold-legend" id="macroHighLowLegend"></div>
         <canvas id="macroHighLowChart"></canvas>
       </div>
@@ -456,8 +438,8 @@
         limitUp: band("limit_up_count"),
         limitDown: band("limit_down_count"),
         limitRatio: band("limit_up_down_ratio"),
-        newHigh: band("new_high_60d"),
-        newLow: band("new_low_60d"),
+        newHigh: band("new_high_120d"),
+        newLow: band("new_low_120d"),
         upMonth: band("up_25pct_month"),
         downMonth: band("down_25pct_month"),
         upQtr: band("up_25pct_qtr"),
@@ -510,8 +492,8 @@
         "涨停/跌停比": ["limitRatioLow", "limitRatioHigh"],
       },
       macroHighLowChart: {
-        "60日新高": ["newHighLow", "newHighHigh"],
-        "60日新低": ["newLowLow", "newLowHigh"],
+        "120日新高": ["newHighLow", "newHighHigh"],
+        "120日新低": ["newLowLow", "newLowHigh"],
       },
       macroMonthChart: {
         "涨>25%": ["upMonthLow", "upMonthHigh"],
@@ -821,10 +803,22 @@
       upsertMacroChart("macroHighLowChart", {
         labels,
         datasets: [
-          lineDataset("60日新高", rows.map((r) => r.new_high_60d), "#22c55e"),
-          lineDataset("60日新低", rows.map((r) => r.new_low_60d), "#ef4444"),
+          lineDataset("120日新高", rows.map((r) => r.new_high_120d), "#22c55e"),
+          lineDataset("120日新低", rows.map((r) => r.new_low_120d), "#ef4444"),
+          lineDataset("沪深300", rows.map((r) => r.hs300_close), "#fbbf24", "y1"),
         ],
-      }, { annotations: macroAnnotations.macroHighLowChart });
+      }, {
+        annotations: macroAnnotations.macroHighLowChart,
+        scales: {
+          y: { position: "left", title: { display: true, text: "家数", color: "#8fa3bf", font: { size: 11 } } },
+          y1: {
+            position: "right",
+            grid: NO_GRID,
+            ticks: { color: "#fbbf24" },
+            title: { display: true, text: "沪深300", color: "#fbbf24", font: { size: 11 } },
+          },
+        },
+      });
 
       upsertMacroChart("macroMonthChart", {
         labels,
@@ -986,25 +980,7 @@
         console.warn("LightweightCharts 未加载，K 线区域跳过");
         return;
       }
-
-      items.forEach((item, idx) => {
-        const host = document.getElementById(`kline-host-${idx}`);
-        if (!host) return;
-        const card = host.closest(".kline-card");
-
-        if (item.is_breakout_candidate === true) {
-          renderOneKlineChart(item, idx);
-          return;
-        }
-
-        if (card) {
-          card.addEventListener(
-            "mouseenter",
-            () => renderOneKlineChart(item, idx),
-            { once: true }
-          );
-        }
-      });
+      items.forEach((item, idx) => renderOneKlineChart(item, idx));
     }
 
     function renderOneKlineChart(item, idx) {
@@ -1019,83 +995,119 @@
 
       host.dataset.rendered = "1";
 
-        const chart = LightweightCharts.createChart(host, {
-          width: host.clientWidth,
-          height: host.clientHeight || 240,
-          layout: {
-            background: { type: "solid", color: "#000000" },
-            textColor: "#8fa3bf",
-          },
-          grid: {
-            vertLines: { visible: false },
-            horzLines: { visible: false },
-          },
-          timeScale: {
-            borderColor: "#243044",
-            fixLeftEdge: true,
-            fixRightEdge: true,
-          },
-          rightPriceScale: { borderColor: "#243044" },
-        });
+      const frame = host.closest(".kline-chart-frame");
+      const chartHeight = frame ? frame.clientHeight : 304;
 
-        const candleSeries = chart.addCandlestickSeries({
-          upColor: "#ef4444",
-          downColor: "#22c55e",
-          borderVisible: false,
-          wickUpColor: "#ef4444",
-          wickDownColor: "#22c55e",
-        });
+      const chart = LightweightCharts.createChart(host, {
+        width: host.clientWidth,
+        height: chartHeight,
+        layout: {
+          background: { type: "solid", color: "#000000" },
+          textColor: "#8fa3bf",
+          attributionLogo: false,
+        },
+        grid: {
+          vertLines: { visible: false },
+          horzLines: { visible: false },
+        },
+        timeScale: {
+          borderColor: "#243044",
+          fixLeftEdge: true,
+          fixRightEdge: true,
+        },
+        rightPriceScale: { borderColor: "#243044" },
+        handleScroll: {
+          mouseWheel: false,
+          pressedMouseMove: true,
+          horzTouchDrag: true,
+          vertTouchDrag: false,
+        },
+        handleScale: {
+          axisPressedMouseMove: true,
+          mouseWheel: false,
+          pinch: false,
+        },
+      });
 
-        candleSeries.setData(
-          klines.map((k) => ({
+      const candleSeries = chart.addCandlestickSeries({
+        priceScaleId: "right",
+        upColor: "#ef4444",
+        downColor: "#22c55e",
+        borderVisible: false,
+        wickUpColor: "#ef4444",
+        wickDownColor: "#22c55e",
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+
+      candleSeries.setData(
+        klines.map((k) => ({
+          time: k.date,
+          open: Number(k.open),
+          high: Number(k.high),
+          low: Number(k.low),
+          close: Number(k.close),
+        }))
+      );
+
+      // K 线约 80%，成交量约 20%
+      candleSeries.priceScale().applyOptions({
+        scaleMargins: { top: 0.02, bottom: 0.20 },
+      });
+
+      const volumeSeries = chart.addHistogramSeries({
+        priceFormat: { type: "volume" },
+        priceScaleId: "",
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+
+      volumeSeries.priceScale().applyOptions({
+        scaleMargins: { top: 0.80, bottom: 0 },
+        visible: false,
+        borderVisible: false,
+      });
+
+      volumeSeries.setData(
+        klines.map((k) => {
+          const isUp = Number(k.close) >= Number(k.open);
+          return {
             time: k.date,
-            open: Number(k.open),
-            high: Number(k.high),
-            low: Number(k.low),
-            close: Number(k.close),
-          }))
-        );
+            value: Number(k.volume) || 0,
+            color: isUp ? "rgba(239, 68, 68, 0.8)" : "rgba(34, 197, 94, 0.8)",
+          };
+        })
+      );
 
-        const volumeSeries = chart.addHistogramSeries({
-          color: "#26a69a",
-          priceFormat: { type: "volume" },
-          priceScaleId: "",
-          scaleMargins: { top: 0.75, bottom: 0 },
-        });
-
-        volumeSeries.setData(
-          klines.map((k) => {
-            const isUp = Number(k.close) >= Number(k.open);
-            return {
-              time: k.date,
-              value: Number(k.volume) || 0,
-              color: isUp ? "rgba(239, 68, 68, 0.4)" : "rgba(34, 197, 94, 0.4)",
-            };
+      const emaConfigs = [
+        { period: 10, color: "#eab308" },
+        { period: 20, color: "#ec4899" },
+        { period: 50, color: "#3b82f6" },
+      ];
+      emaConfigs.forEach(({ period, color }) => {
+        const emaData = calcEmaSeries(klines, period);
+        if (!emaData.length) return;
+        chart
+          .addLineSeries({
+            color,
+            lineWidth: 1,
+            priceScaleId: "right",
+            priceLineVisible: false,
+            lastValueVisible: false,
           })
-        );
+          .setData(emaData);
+      });
 
-        const emaConfigs = [
-          { period: 10, color: "#eab308" },
-          { period: 20, color: "#ec4899" },
-          { period: 50, color: "#3b82f6" },
-        ];
+      chart.timeScale().fitContent();
 
-        emaConfigs.forEach(({ period, color }) => {
-          const emaData = calcEmaSeries(klines, period);
-          if (!emaData.length) return;
-          chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
-            .setData(emaData);
+      if (window.ResizeObserver && frame) {
+        const observer = new ResizeObserver(() => {
+          const h = frame.clientHeight || 304;
+          chart.applyOptions({ width: host.clientWidth, height: h });
+          chart.timeScale().fitContent();
         });
-
-        chart.timeScale().fitContent();
-
-        if (window.ResizeObserver) {
-          const observer = new ResizeObserver(() => {
-            chart.applyOptions({ width: host.clientWidth });
-            chart.timeScale().fitContent();
-          });
-          observer.observe(host);
-        }
+        observer.observe(frame);
+      }
     }
 
     async function loadData() {
@@ -1178,12 +1190,13 @@
             const rs = escHtml(item.rs_score ?? "—");
             const industry = escHtml(item.sector || (item.sectors && item.sectors[0]) || "—");
             const isBreakout = item.is_breakout_candidate === true;
-            const cardClass = isBreakout ? "kline-card breakout-candidate" : "kline-card watch-muted";
-            const adr = item.adr_5d != null ? Number(item.adr_5d).toFixed(2) : "—";
+            const cardClass = isBreakout ? "kline-card breakout-candidate" : "kline-card";
+            const adrRaw = item.adr_20d ?? item.adr_5d;
+            const adr = adrRaw != null ? Number(adrRaw).toFixed(2) : "—";
             const rvol = item.rvol != null ? Number(item.rvol).toFixed(2) : "—";
             const breakoutHint = isBreakout
               ? '<span class="breakout-tag">突破候选</span>'
-              : '<span>悬停查看 K 线</span>';
+              : '<span>非突破候选</span>';
             return `
           <div class="${cardClass}">
             <div class="kline-head">
@@ -1192,7 +1205,7 @@
                   <span class="kline-ticker">${ticker}</span>
                   <span class="kline-name">${name}<span class="kline-industry">${industry !== "—" ? " · " + industry : ""}</span></span>
                 </div>
-                <div class="kline-metrics">ADR5 ${adr}% · RVOL ${rvol} · ${breakoutHint}</div>
+                <div class="kline-metrics">ADR20 ${adr}% · RVOL ${rvol} · ${breakoutHint}</div>
               </div>
               <span class="kline-rs">RS <strong>${rs}</strong></span>
             </div>

@@ -66,13 +66,13 @@ def _compute_limit_counts(work_today: pd.DataFrame) -> tuple[int, int, float]:
     return limit_up, limit_down, ratio
 
 
-def _compute_new_high_low_60d(combined: pd.DataFrame) -> tuple[int, int]:
-    """统计 60 个交易日窗口内创季度新高/新低的股票家数。"""
+def _compute_new_high_low(combined: pd.DataFrame) -> tuple[int | float, int | float]:
+    """统计 N 个交易日窗口内创新高/新低的股票家数（N = BREADTH_NEW_HIGH_LOW_DAYS）。"""
     lookback = config.BREADTH_NEW_HIGH_LOW_DAYS
     pivot = combined.pivot_table(index="date", columns="code", values="close", aggfunc="last")
     pivot = pivot.sort_index()
     if len(pivot) < lookback:
-        return 0, 0
+        return np.nan, np.nan
 
     window = pivot.tail(lookback)
     today_close = window.iloc[-1]
@@ -83,6 +83,30 @@ def _compute_new_high_low_60d(combined: pd.DataFrame) -> tuple[int, int]:
     new_high = int((today_close[valid] >= rolling_max[valid]).sum())
     new_low = int((today_close[valid] <= rolling_min[valid]).sum())
     return new_high, new_low
+
+
+def _count_new_high_low_rows(pivot: pd.DataFrame, lookback: int) -> pd.DataFrame:
+    """向量化：每个交易日统计创 lookback 日新高/新低的家数；窗口不足时为 NaN。"""
+    rolling_max = pivot.rolling(lookback, min_periods=lookback).max()
+    rolling_min = pivot.rolling(lookback, min_periods=lookback).min()
+
+    new_high = (pivot >= rolling_max).sum(axis=1).astype(float)
+    new_low = (pivot <= rolling_min).sum(axis=1).astype(float)
+
+    # 前 lookback-1 个交易日没有完整窗口，不能显示为 0
+    if len(pivot) >= lookback:
+        valid_mask = pd.Series(False, index=pivot.index)
+        valid_mask.iloc[lookback - 1 :] = True
+        new_high = new_high.where(valid_mask, np.nan)
+        new_low = new_low.where(valid_mask, np.nan)
+    else:
+        new_high[:] = np.nan
+        new_low[:] = np.nan
+
+    return pd.DataFrame(
+        {"new_high_120d": new_high, "new_low_120d": new_low},
+        index=pivot.index,
+    )
 
 
 def _compute_pt_ratios(combined: pd.DataFrame) -> tuple[float, float]:
@@ -134,6 +158,32 @@ def _compute_month_qtr_extremes(combined: pd.DataFrame) -> tuple[int, int, int, 
     return up_month, down_month, up_qtr, down_qtr
 
 
+def _attach_hs300_close(daily: pd.DataFrame) -> pd.DataFrame:
+    """按日期合并沪深300收盘价，供看板右轴叠加。"""
+    from src.data_fetcher import fetch_hs300_close_series
+
+    if daily.empty:
+        daily["hs300_close"] = pd.Series(dtype=float)
+        return daily
+
+    work = daily.copy()
+    work["date"] = pd.to_datetime(work["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    start = work["date"].min()
+    hs300 = fetch_hs300_close_series(start_date=start)
+    merged = work.merge(hs300, on="date", how="left")
+    return merged
+
+
+def _lookup_hs300_close(trade_date_str: str) -> float:
+    from src.data_fetcher import fetch_hs300_close_series
+
+    series = fetch_hs300_close_series(start_date=trade_date_str)
+    match = series[series["date"] == trade_date_str]
+    if match.empty:
+        return np.nan
+    return float(match["hs300_close"].iloc[0])
+
+
 def compute_full_market_breadth_history(enriched_df: pd.DataFrame) -> pd.DataFrame:
     """
     从全量 K 线（含 ma20 / ma50 / pct_change）向量化计算完整广度历史。
@@ -181,8 +231,7 @@ def compute_full_market_breadth_history(enriched_df: pd.DataFrame) -> pd.DataFra
     ret_qtr = pivot / pivot.shift(config.BREADTH_QTR_DAYS) - 1.0
 
     lookback = config.BREADTH_NEW_HIGH_LOW_DAYS
-    rolling_max = pivot.rolling(lookback, min_periods=lookback).max()
-    rolling_min = pivot.rolling(lookback, min_periods=lookback).min()
+    high_low_metrics = _count_new_high_low_rows(pivot, lookback)
 
     pivot_metrics = pd.DataFrame(
         {
@@ -190,16 +239,15 @@ def compute_full_market_breadth_history(enriched_df: pd.DataFrame) -> pd.DataFra
             "down_25pct_month": (ret_month < -pct_thr).sum(axis=1),
             "up_25pct_qtr": (ret_qtr > pct_thr).sum(axis=1),
             "down_25pct_qtr": (ret_qtr < -pct_thr).sum(axis=1),
-            "new_high_60d": (pivot >= rolling_max).sum(axis=1),
-            "new_low_60d": (pivot <= rolling_min).sum(axis=1),
         },
         index=pivot.index,
-    )
+    ).join(high_low_metrics, how="left")
 
     daily = daily.set_index("date").join(pivot_metrics, how="left").reset_index()
 
     daily = daily.drop(columns=["universe_size"])
     daily["date"] = daily["date"].dt.strftime("%Y-%m-%d")
+    daily = _attach_hs300_close(daily)
     return daily[BREADTH_COLUMNS].sort_values("date").reset_index(drop=True)
 
 
@@ -257,11 +305,12 @@ def update_daily_breadth(
     below_5pct = int((work_today["pct_change"] < -threshold).sum())
     limit_up, limit_down, limit_ratio = _compute_limit_counts(work_today)
 
-    # --- PT20 / PT50 + 月/季极限 + 60日新高新低（需结合 rolling） ---
+    # --- PT20 / PT50 + 月/季极限 + 120日新高新低（需结合 rolling） ---
     combined = _prepare_combined_close(rolling_df, work_today)
     pt20, pt50 = _compute_pt_ratios(combined)
     up_month, down_month, up_qtr, down_qtr = _compute_month_qtr_extremes(combined)
-    new_high_60d, new_low_60d = _compute_new_high_low_60d(combined)
+    new_high_120d, new_low_120d = _compute_new_high_low(combined)
+    hs300_close = _lookup_hs300_close(trade_date_str)
 
     today_row = pd.DataFrame(
         [
@@ -274,8 +323,9 @@ def update_daily_breadth(
                 "limit_up_count": limit_up,
                 "limit_down_count": limit_down,
                 "limit_up_down_ratio": limit_ratio,
-                "new_high_60d": new_high_60d,
-                "new_low_60d": new_low_60d,
+                "new_high_120d": new_high_120d,
+                "new_low_120d": new_low_120d,
+                "hs300_close": hs300_close,
                 "up_25pct_month": up_month,
                 "down_25pct_month": down_month,
                 "up_25pct_qtr": up_qtr,
