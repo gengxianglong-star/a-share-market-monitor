@@ -37,6 +37,12 @@ def _build_latest_snapshot(rolling_df: pd.DataFrame) -> pd.DataFrame:
     并附加最新一日的 OHLCV 与均线指标。
     """
     work = rolling_df.sort_values(["code", "date"]).copy()
+
+    # --- 识别涨停基因 (主板约9.5%，创业板/科创板约19.5%) ---
+    is_growth = work["code"].astype(str).str.contains(r"\.(?:300|688)")
+    limit_thr = np.where(is_growth, 19.5, 9.5)
+    work["is_limit_up"] = work["pct_change"] >= limit_thr
+
     grouped = work.groupby("code", group_keys=False)
 
     # --- 各周期 ROC (Rate of Change, %) ---
@@ -54,6 +60,11 @@ def _build_latest_snapshot(rolling_df: pd.DataFrame) -> pd.DataFrame:
     # --- 每只股票的有效上市交易日数 ---
     work["listing_days"] = grouped.cumcount() + 1
 
+    # --- 过去 60 天的累计涨停次数 ---
+    work["limit_up_60d"] = grouped["is_limit_up"].transform(
+        lambda s: s.rolling(60, min_periods=1).sum()
+    )
+
     # 取每只股票最新一行作为截面快照
     latest = work.groupby("code", as_index=False).tail(1).copy()
 
@@ -70,6 +81,7 @@ def _apply_stock_funnel(snapshot: pd.DataFrame) -> pd.Series:
     - MA50 向上发散
     - 20 日均成交额 >= 1 亿
     - 上市满 60 个交易日
+    - 近 60 日至少 1 次涨停（涨停基因）
     """
     mask = (
         (snapshot["close"] > snapshot["ma20"])
@@ -77,6 +89,7 @@ def _apply_stock_funnel(snapshot: pd.DataFrame) -> pd.Series:
         & (snapshot["ma50"] > snapshot["ma50_lag"])
         & (snapshot["vol_ma20"] >= config.MIN_VOLUME_MA20)
         & (snapshot["listing_days"] >= config.MIN_LISTING_DAYS)
+        & (snapshot["limit_up_60d"] >= config.MIN_LIMIT_UP_COUNT_60D)
         & snapshot["ma20"].notna()
         & snapshot["ma50"].notna()
         & snapshot["ma50_lag"].notna()
@@ -154,6 +167,7 @@ def _extract_recent_klines(
                 "high": round(float(row["high"]), 4),
                 "low": round(float(row["low"]), 4),
                 "close": round(float(row["close"]), 4),
+                "volume": float(row["volume"]) if pd.notna(row.get("volume")) else 0.0,
             }
         )
     return klines

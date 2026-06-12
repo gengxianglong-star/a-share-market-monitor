@@ -1056,6 +1056,24 @@
           }))
         );
 
+        const volumeSeries = chart.addHistogramSeries({
+          color: "#26a69a",
+          priceFormat: { type: "volume" },
+          priceScaleId: "",
+          scaleMargins: { top: 0.75, bottom: 0 },
+        });
+
+        volumeSeries.setData(
+          klines.map((k) => {
+            const isUp = Number(k.close) >= Number(k.open);
+            return {
+              time: k.date,
+              value: Number(k.volume) || 0,
+              color: isUp ? "rgba(239, 68, 68, 0.4)" : "rgba(34, 197, 94, 0.4)",
+            };
+          })
+        );
+
         const emaConfigs = [
           { period: 10, color: "#eab308" },
           { period: 20, color: "#ec4899" },
