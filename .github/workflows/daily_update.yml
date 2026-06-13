@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   update_monitor:
@@ -68,3 +70,37 @@ jobs:
             git commit -m "chore: daily market monitor update $(date -u '+%Y-%m-%d %H:%M UTC')"
             git push
           fi
+
+      - name: Prepare Pages site
+        run: |
+          mkdir -p _site/data
+          cp index.html _site/
+          cp data/market_breadth_history.json data/daily_watchlist.json _site/data/
+          if [ -f data/market_breadth_history.csv ]; then
+            cp data/market_breadth_history.csv _site/data/
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy_pages:
+    needs: update_monitor
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Dashboard URL summary
+        run: |
+          {
+            echo "## 📊 在线看板"
+            echo ""
+            echo "👉 ${{ steps.deployment.outputs.page_url }}"
+          } >> "$GITHUB_STEP_SUMMARY"
