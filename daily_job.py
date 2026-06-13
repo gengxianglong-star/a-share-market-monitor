@@ -19,7 +19,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from src import config
-from src.breadth_engine import update_daily_breadth
+from src.breadth_engine import refresh_breadth_derived_metrics, update_daily_breadth
 from src.data_fetcher import (
     fetch_akshare_market_snapshot,
     fetch_sector_mapping,
@@ -135,6 +135,7 @@ def main() -> None:
     print("🌡️  计算大盘市场宽度...")
     try:
         breadth_row = update_daily_breadth(today_df=today_df, rolling_df=enriched, trade_date=trade_date)
+        refresh_breadth_derived_metrics(enriched)
         print(
             f"📊 宽度已写入 DuckDB | 涨>5%: {int(breadth_row['above_5pct_count'].iloc[0])} 家 | "
             f"PT20: {float(breadth_row['pt20_ratio'].iloc[0]):.1%}"

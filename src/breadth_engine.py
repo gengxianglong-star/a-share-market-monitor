@@ -176,12 +176,63 @@ def _attach_hs300_close(daily: pd.DataFrame) -> pd.DataFrame:
 
 def _lookup_hs300_close(trade_date_str: str) -> float:
     from src.data_fetcher import fetch_hs300_close_series
+    from src.db_client import load_breadth_history
+
+    history = load_breadth_history()
+    if not history.empty and "hs300_close" in history.columns:
+        history["date"] = pd.to_datetime(history["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        match = history[history["date"] == trade_date_str]
+        if not match.empty and pd.notna(match.iloc[0]["hs300_close"]):
+            return float(match.iloc[0]["hs300_close"])
 
     series = fetch_hs300_close_series(start_date=trade_date_str)
     match = series[series["date"] == trade_date_str]
     if match.empty:
         return np.nan
     return float(match["hs300_close"].iloc[0])
+
+
+def refresh_breadth_derived_metrics(rolling_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    用滚动 K 线池补全广度历史中可计算的 120 日新高/新低，并合并沪深300收盘价。
+    """
+    from src.data_fetcher import fetch_hs300_close_series
+    from src.db_client import load_breadth_history, replace_breadth_history
+
+    history = load_breadth_history()
+    if history.empty:
+        return history
+
+    work = history.copy()
+    work["date"] = pd.to_datetime(work["date"], errors="coerce")
+
+    if rolling_df is not None and not rolling_df.empty:
+        pool = rolling_df.copy()
+        pool["date"] = pd.to_datetime(pool["date"], errors="coerce")
+        pivot = pool.pivot_table(index="date", columns="code", values="close", aggfunc="last").sort_index()
+        metrics = _count_new_high_low_rows(pivot, config.BREADTH_NEW_HIGH_LOW_DAYS).reset_index()
+        metrics["date"] = pd.to_datetime(metrics["date"], errors="coerce")
+
+        work = work.merge(metrics, on="date", how="left", suffixes=("", "_roll"))
+        for col in ("new_high_120d", "new_low_120d"):
+            roll_col = f"{col}_roll"
+            if roll_col in work.columns:
+                has_roll = work[roll_col].notna()
+                work.loc[has_roll, col] = work.loc[has_roll, roll_col]
+                work.drop(columns=[roll_col], inplace=True)
+
+    date_str = work["date"].dt.strftime("%Y-%m-%d")
+    cached_hs = pd.DataFrame({"date": date_str, "hs300_close": work["hs300_close"]}).dropna(subset=["hs300_close"])
+    missing_mask = work["hs300_close"].isna()
+    if missing_mask.any():
+        start = date_str.loc[missing_mask].min()
+        fetched = fetch_hs300_close_series(start_date=start)
+        if not fetched.empty:
+            merged_hs = pd.concat([cached_hs, fetched], ignore_index=True).drop_duplicates("date", keep="last")
+            work = work.assign(date=date_str).drop(columns=["hs300_close"]).merge(merged_hs, on="date", how="left")
+
+    work["date"] = pd.to_datetime(work["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    return replace_breadth_history(work[config.BREADTH_COLUMNS])
 
 
 def compute_full_market_breadth_history(enriched_df: pd.DataFrame) -> pd.DataFrame:

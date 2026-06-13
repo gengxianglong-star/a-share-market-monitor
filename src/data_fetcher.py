@@ -879,6 +879,42 @@ def fetch_sector_mapping(force_refresh: bool = False) -> pd.DataFrame:
 fetch_sector_mapping_ths = fetch_ths_sector_mapping
 
 
+def _normalize_hs300_close_df(
+    raw: pd.DataFrame,
+    date_col: str,
+    close_col: str,
+    start: str,
+) -> pd.DataFrame:
+    if raw is None or raw.empty:
+        raise RuntimeError("沪深300 日线为空")
+    work = raw.rename(columns={date_col: "date", close_col: "hs300_close"}).copy()
+    work["date"] = pd.to_datetime(work["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    work["hs300_close"] = pd.to_numeric(work["hs300_close"], errors="coerce")
+    out = work[["date", "hs300_close"]].dropna(subset=["date", "hs300_close"])
+    return out[out["date"] >= start].sort_values("date").reset_index(drop=True)
+
+
+def _fetch_hs300_index_zh_a_hist(start: str) -> pd.DataFrame:
+    raw = ak.index_zh_a_hist(
+        symbol=config.HS300_INDEX_SYMBOL,
+        period="daily",
+        start_date=start.replace("-", ""),
+    )
+    return _normalize_hs300_close_df(raw, "日期", "收盘", start)
+
+
+def _fetch_hs300_stock_zh_index_daily(start: str) -> pd.DataFrame:
+    raw = ak.stock_zh_index_daily(symbol="sh000300")
+    return _normalize_hs300_close_df(raw, "date", "close", start)
+
+
+def _fetch_hs300_stock_zh_index_daily_em(start: str) -> pd.DataFrame:
+    raw = ak.stock_zh_index_daily_em(symbol="000300")
+    date_col = "date" if "date" in raw.columns else "日期"
+    close_col = "close" if "close" in raw.columns else "收盘"
+    return _normalize_hs300_close_df(raw, date_col, close_col, start)
+
+
 def fetch_hs300_close_series(start_date: Optional[str] = None) -> pd.DataFrame:
     """
     拉取沪深300（000300）日收盘价，供宏观广度图右轴叠加。
@@ -886,27 +922,20 @@ def fetch_hs300_close_series(start_date: Optional[str] = None) -> pd.DataFrame:
     返回列：date (YYYY-MM-DD), hs300_close
     """
     start = start_date or config.FULL_HISTORY_START_DATE
+    fetchers = (
+        _fetch_hs300_index_zh_a_hist,
+        _fetch_hs300_stock_zh_index_daily,
+        _fetch_hs300_stock_zh_index_daily_em,
+    )
     last_error: Optional[Exception] = None
 
-    for attempt in range(MAX_RETRIES):
-        try:
-            raw = ak.index_zh_a_hist(
-                symbol=config.HS300_INDEX_SYMBOL,
-                period="daily",
-                start_date=start.replace("-", ""),
-            )
-            if raw is None or raw.empty:
-                raise RuntimeError("沪深300 日线为空")
-
-            work = raw.rename(columns={"日期": "date", "收盘": "hs300_close"})
-            work["date"] = pd.to_datetime(work["date"], errors="coerce").dt.strftime("%Y-%m-%d")
-            work["hs300_close"] = pd.to_numeric(work["hs300_close"], errors="coerce")
-            out = work[["date", "hs300_close"]].dropna(subset=["date", "hs300_close"])
-            out = out[out["date"] >= start].sort_values("date").reset_index(drop=True)
-            return out
-        except Exception as exc:
-            last_error = exc
-            time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+    for fetcher in fetchers:
+        for attempt in range(MAX_RETRIES):
+            try:
+                return fetcher(start)
+            except Exception as exc:
+                last_error = exc
+                time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
 
     print(f"[警告] 无法获取沪深300收盘价: {last_error}")
     return pd.DataFrame(columns=["date", "hs300_close"])

@@ -180,9 +180,12 @@ def _attach_recent_klines(
     records: List[Dict[str, Any]],
     rolling_df: pd.DataFrame,
 ) -> List[Dict[str, Any]]:
-    """为 Watchlist 记录附加最近 K 线序列。"""
+    """为 Watchlist 记录附加最近 K 线序列，并以 K 线末根收盘价对齐 close 字段。"""
     for record in records:
-        record["klines"] = _extract_recent_klines(rolling_df, str(record["code"]))
+        klines = _extract_recent_klines(rolling_df, str(record["code"]))
+        record["klines"] = klines
+        if klines:
+            record["close"] = klines[-1]["close"]
     return records
 
 
