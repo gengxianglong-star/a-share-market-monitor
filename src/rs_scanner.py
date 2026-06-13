@@ -31,10 +31,13 @@ def _resolve_sector_columns(sector_mapping_df: pd.DataFrame) -> tuple[str, str, 
     return code_col, sector_col, name_col
 
 
-def _build_latest_snapshot(rolling_df: pd.DataFrame) -> pd.DataFrame:
+def _build_latest_snapshot(
+    rolling_df: pd.DataFrame,
+    trade_date: Optional[str] = None,
+) -> pd.DataFrame:
     """
     向量化计算每只股票的 ROC、混合 RS、百分位 RS_Score，
-    并附加最新一日的 OHLCV 与均线指标。
+    并附加指定交易日（或该日之前最近一日）的 OHLCV 与均线指标。
     """
     work = rolling_df.sort_values(["code", "date"]).copy()
 
@@ -65,8 +68,17 @@ def _build_latest_snapshot(rolling_df: pd.DataFrame) -> pd.DataFrame:
         lambda s: s.rolling(60, min_periods=1).sum()
     )
 
-    # 取每只股票最新一行作为截面快照
-    latest = work.groupby("code", as_index=False).tail(1).copy()
+    # 取目标交易日截面；若当日无数据则回退至该日之前最近一行
+    if trade_date is not None:
+        td = pd.Timestamp(trade_date)
+        on_day = work[work["date"] == td]
+        if not on_day.empty:
+            latest = on_day.copy()
+        else:
+            prior = work[work["date"] <= td]
+            latest = prior.groupby("code", as_index=False).tail(1).copy()
+    else:
+        latest = work.groupby("code", as_index=False).tail(1).copy()
 
     # --- 全市场横向百分位排名 → RS_Score (0~100) ---
     latest["RS_Score"] = latest["rs_blended"].rank(pct=True, method="average") * 100.0
@@ -154,9 +166,12 @@ def _extract_recent_klines(
     rolling_df: pd.DataFrame,
     code: str,
     days: int = config.KLINE_CHART_DAYS,
+    trade_date: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """从滚动 K 线池提取最近 N 个交易日 OHLC，供看板绘制。"""
     stock_df = rolling_df[rolling_df["code"] == code].sort_values("date")
+    if trade_date is not None:
+        stock_df = stock_df[stock_df["date"] <= pd.Timestamp(trade_date)]
     if stock_df.empty:
         return []
 
@@ -179,13 +194,26 @@ def _extract_recent_klines(
 def _attach_recent_klines(
     records: List[Dict[str, Any]],
     rolling_df: pd.DataFrame,
+    trade_date: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """为 Watchlist 记录附加最近 K 线序列，并以 K 线末根收盘价对齐 close 字段。"""
+    """为 Watchlist 记录附加最近 K 线序列，并以滚动池末根 OHLC/均线对齐展示字段。"""
     for record in records:
-        klines = _extract_recent_klines(rolling_df, str(record["code"]))
+        code = str(record["code"])
+        klines = _extract_recent_klines(rolling_df, code, trade_date=trade_date)
         record["klines"] = klines
-        if klines:
-            record["close"] = klines[-1]["close"]
+
+        pool = rolling_df[rolling_df["code"] == code].sort_values("date")
+        if trade_date is not None:
+            pool = pool[pool["date"] <= pd.Timestamp(trade_date)]
+        if pool.empty:
+            continue
+
+        row = pool.iloc[-1]
+        record["close"] = round(float(row["close"]), 4)
+        record["close_date"] = pd.to_datetime(row["date"]).strftime("%Y-%m-%d")
+        for col in ("ma20", "ma50", "open", "high", "low"):
+            if col in row.index and pd.notna(row[col]):
+                record[col] = round(float(row[col]), 4)
     return records
 
 
@@ -269,13 +297,13 @@ def run_daily_scan(
 
     code_col, sector_col, name_col = _resolve_sector_columns(sector_mapping_df)
 
-    # --- 1. 构建最新截面 + RS_Score ---
-    snapshot = _build_latest_snapshot(rolling_df)
-
     if trade_date is None:
-        trade_date = pd.to_datetime(snapshot["date"].max()).strftime("%Y-%m-%d")
+        trade_date = pd.to_datetime(rolling_df["date"].max()).strftime("%Y-%m-%d")
     else:
         trade_date = pd.to_datetime(trade_date).strftime("%Y-%m-%d")
+
+    # --- 1. 构建目标交易日截面 + RS_Score ---
+    snapshot = _build_latest_snapshot(rolling_df, trade_date=trade_date)
 
     # --- 2. 个股过滤漏斗 ---
     funnel_mask = _apply_stock_funnel(snapshot)
@@ -328,10 +356,18 @@ def run_daily_scan(
 
     intersection_records = _build_watchlist_records(intersection_df, sector_col, name_col)
     intersection_records = _attach_all_sectors(intersection_records)
-    intersection_records = _attach_recent_klines(intersection_records, rolling_df)
+    intersection_records = _attach_recent_klines(
+        intersection_records, rolling_df, trade_date=trade_date
+    )
+
+    effective_date = trade_date
+    if intersection_records:
+        close_dates = [r.get("close_date") for r in intersection_records if r.get("close_date")]
+        if close_dates and trade_date not in close_dates:
+            effective_date = max(close_dates)
 
     return {
-        "date": trade_date,
+        "date": effective_date,
         "kline_days": config.KLINE_CHART_DAYS,
         "sector_type": "sw_l2",
         "top_sectors": top_sectors,

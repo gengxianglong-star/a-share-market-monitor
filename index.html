@@ -1284,6 +1284,8 @@
             const isBreakout = item.is_breakout_candidate === true;
             const cardClass = isBreakout ? "kline-card breakout-candidate" : "kline-card";
             const closePx = item.close != null ? Number(item.close).toFixed(2) : "—";
+            const closeDate = item.close_date ? String(item.close_date).slice(5) : "";
+            const closeLabel = closeDate ? `收盘 ${closePx} (${closeDate})` : `收盘 ${closePx}`;
             const adrRaw = item.adr_20d ?? item.adr_5d;
             const adr = adrRaw != null ? Number(adrRaw).toFixed(2) : "—";
             const rvol = item.rvol != null ? Number(item.rvol).toFixed(2) : "—";
@@ -1298,7 +1300,7 @@
                   <span class="kline-ticker">${ticker}</span>
                   <span class="kline-name">${name}<span class="kline-industry">${industry !== "—" ? " · " + industry : ""}</span></span>
                 </div>
-                <div class="kline-metrics">收盘 ${closePx} · ADR20 ${adr}% · RVOL ${rvol} · ${breakoutHint}</div>
+                <div class="kline-metrics">${closeLabel} · ADR20 ${adr}% · RVOL ${rvol} · ${breakoutHint}</div>
               </div>
               <span class="kline-rs">RS <strong>${rs}</strong></span>
             </div>

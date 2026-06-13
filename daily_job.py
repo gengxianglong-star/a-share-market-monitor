@@ -103,24 +103,28 @@ def main() -> None:
     existing_dates = set(rolling_df["date"].dt.strftime("%Y-%m-%d"))
     data_updated = False
 
-    # --- 2. 拉取今日截面并更新滑动窗口 ---
+    # --- 2. 拉取/刷新目标交易日截面（即使池中已有该日也覆盖，保证收盘价最新）---
     if trade_date in existing_dates:
-        print(f"⏭️  热数据池已含 {trade_date}，跳过截面拉取，直接运行选股与 JSON 输出。")
-        enriched = rolling_df
+        print(f"🔄 热数据池已含 {trade_date}，仍拉取截面刷新当日收盘价...")
     else:
         print("📡 拉取 AkShare 全市场截面...")
-        try:
-            snapshot = fetch_akshare_market_snapshot(trade_date)
-            name_map = load_stock_name_map()
-            valid_codes = set(rolling_df["code"].unique())
-            snapshot = filter_snapshot_to_universe(snapshot, valid_codes, name_map)
-            snapshot["date"] = pd.to_datetime(snapshot["date"], errors="coerce")
-            print(f"✅ 截面 {len(snapshot)} 只（与热数据池交集）")
-        except Exception as exc:
+
+    try:
+        snapshot = fetch_akshare_market_snapshot(trade_date)
+        name_map = load_stock_name_map()
+        valid_codes = set(rolling_df["code"].unique())
+        snapshot = filter_snapshot_to_universe(snapshot, valid_codes, name_map)
+        snapshot["date"] = pd.to_datetime(snapshot["date"], errors="coerce")
+        print(f"✅ 截面 {len(snapshot)} 只（与热数据池交集）")
+    except Exception as exc:
+        if trade_date in existing_dates:
+            print(f"⚠️  截面刷新失败，使用池中已有 {trade_date} 数据: {exc}")
+            enriched = rolling_df
+        else:
             print(f"❌ 拉取今日快照失败: {exc}")
             sys.exit(1)
-
-        print("🔄 更新 150 日滑动窗口...")
+    else:
+        print("🔄 更新滚动窗口...")
         enriched = _update_rolling_pool(rolling_df, snapshot)
         save_rolling_klines(enriched)
         data_updated = True
